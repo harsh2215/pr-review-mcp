@@ -2,10 +2,9 @@
 
 _Last updated: 2026-09-13_
 
-## Status: PHASE 1 COMPLETE ✅
+## Status: PHASE 1 COMPLETE ✅  (review contract implemented)
 
-All 93 tests pass (75 unit + 18 integration).
-The `review_pull_request` MCP tool is implemented and verified against the live GitHub repository.
+All 160 tests pass (93 Phase-1a + 67 new Phase-1b).
 
 ---
 
