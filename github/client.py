@@ -47,6 +47,8 @@ class GitHubHTTPError(RuntimeError):
 
 _GITHUB_API_BASE = "https://api.github.com"
 _DEFAULT_TIMEOUT_SECONDS = 30.0
+# GitHub hard limit for paginated list endpoints.
+_MAX_PER_PAGE = 100
 
 
 def _load_token() -> str:
@@ -149,6 +151,62 @@ class GitHubClient:
 
         return response.json()
 
+    def _paginate(self, path: str, **kwargs: Any) -> list[dict[str, Any]]:
+        """Fetch all pages of a list endpoint.
+
+        GitHub paginates list responses via the ``Link`` header.  This method
+        follows ``next`` links until exhausted, accumulating all items into a
+        single list.
+
+        Args:
+            path: URL path relative to *base_url*.
+            **kwargs: Additional request parameters (e.g. ``params``).
+
+        Returns:
+            All items collected across every page.
+
+        Raises:
+            GitHubHTTPError: On any non-2xx response.
+        """
+        params = dict(kwargs.pop("params", {}) or {})
+        params.setdefault("per_page", _MAX_PER_PAGE)
+        params["per_page"] = min(int(params["per_page"]), _MAX_PER_PAGE)
+
+        results: list[dict[str, Any]] = []
+        # current_path is always a relative path for the base_url-configured client.
+        current_path: str = path
+        current_params: dict | None = params
+        first_page = True
+
+        while current_path is not None:
+            if first_page:
+                response = self._get_client().request("GET", current_path, params=current_params, **kwargs)
+                first_page = False
+            else:
+                response = self._get_client().request("GET", current_path, **kwargs)
+
+            if response.is_error:
+                try:
+                    body = response.json()
+                    message = body.get("message", response.text)
+                except Exception:
+                    message = response.text or f"HTTP {response.status_code}"
+                raise GitHubHTTPError(response.status_code, message)
+
+            page_data = response.json()
+            if isinstance(page_data, list):
+                results.extend(page_data)
+
+            # Parse Link header – returns absolute URL; strip to relative path+query.
+            next_abs_url = _parse_next_link(response.headers.get("link", ""))
+            if next_abs_url is None:
+                break
+            # Convert absolute URL to path+query so the base_url client handles it.
+            current_path = _abs_to_relative(next_abs_url, self._base_url)
+            current_params = None  # params already encoded in the URL
+
+        return results
+
     def close(self) -> None:
         """Close the underlying HTTP connection pool."""
         if self._client is not None:
@@ -194,28 +252,31 @@ class GitHubClient:
         *,
         per_page: int = 100,
     ) -> list[dict[str, Any]]:
-        """Fetch the list of files changed in a pull request.
+        """Fetch ALL files changed in a pull request, handling pagination.
 
         See: https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files
+
+        GitHub paginates this endpoint (max 100 per page).  This method
+        follows all pages and returns a single flat list.
 
         Args:
             owner: Repository owner.
             repo: Repository name.
             pr_number: Pull request number.
-            per_page: Number of results per page (max 100, GitHub's limit).
+            per_page: Items per page (capped at 100).
 
         Returns:
-            A list of file objects.  Each item contains at minimum:
+            All file objects across every page.  Each item contains at minimum:
             ``filename``, ``status``, ``additions``, ``deletions``,
-            ``changes``, and ``patch``.
+            ``changes``.  The ``patch`` key is present only for text files
+            small enough for GitHub to include it.
 
         Raises:
             GitHubHTTPError: On API errors.
         """
-        return self._request(
-            "GET",
+        return self._paginate(
             f"/repos/{owner}/{repo}/pulls/{pr_number}/files",
-            params={"per_page": min(per_page, 100)},
+            params={"per_page": min(per_page, _MAX_PER_PAGE)},
         )
 
     def get_pull_request_commits(
@@ -226,7 +287,7 @@ class GitHubClient:
         *,
         per_page: int = 100,
     ) -> list[dict[str, Any]]:
-        """Fetch commits included in a pull request.
+        """Fetch ALL commits included in a pull request, handling pagination.
 
         See: https://docs.github.com/en/rest/pulls/pulls#list-commits-on-a-pull-request
 
@@ -234,18 +295,17 @@ class GitHubClient:
             owner: Repository owner.
             repo: Repository name.
             pr_number: Pull request number.
-            per_page: Number of results per page (max 100).
+            per_page: Items per page (capped at 100).
 
         Returns:
-            A list of commit objects.
+            All commit objects across every page.
 
         Raises:
             GitHubHTTPError: On API errors.
         """
-        return self._request(
-            "GET",
+        return self._paginate(
             f"/repos/{owner}/{repo}/pulls/{pr_number}/commits",
-            params={"per_page": min(per_page, 100)},
+            params={"per_page": min(per_page, _MAX_PER_PAGE)},
         )
 
     def get_file_contents(
@@ -284,3 +344,57 @@ class GitHubClient:
             f"/repos/{owner}/{repo}/contents/{path.lstrip('/')}",
             params=params,
         )
+
+
+# ---------------------------------------------------------------------------
+# Link header parsing
+# ---------------------------------------------------------------------------
+
+
+def _parse_next_link(link_header: str) -> str | None:
+    """Extract the ``next`` URL from a GitHub ``Link`` response header.
+
+    GitHub uses the standard RFC 5988 ``Link`` header:
+        ``<https://api.github.com/...?page=2>; rel="next", ...``
+
+    Args:
+        link_header: The raw value of the ``Link`` header (may be empty).
+
+    Returns:
+        The URL for the next page, or ``None`` if there is no next page.
+    """
+    if not link_header:
+        return None
+
+    for part in link_header.split(","):
+        part = part.strip()
+        if 'rel="next"' in part:
+            # Extract the URL from angle brackets.
+            url_part = part.split(";")[0].strip()
+            if url_part.startswith("<") and url_part.endswith(">"):
+                return url_part[1:-1]
+    return None
+
+
+def _abs_to_relative(absolute_url: str, base_url: str) -> str:
+    """Convert an absolute GitHub API URL to a path+query string.
+
+    When an httpx ``Client`` is configured with a ``base_url``, it expects
+    relative paths, not absolute URLs.  GitHub Link header ``next`` values are
+    always absolute – this function strips the base so the client can merge
+    them correctly.
+
+    Args:
+        absolute_url: Full URL, e.g. ``https://api.github.com/repos/...?page=2``.
+        base_url: The base URL configured on the client (no trailing slash).
+
+    Returns:
+        The path+query portion, e.g. ``/repos/...?page=2``.
+        Returns *absolute_url* unchanged if it does not start with *base_url*
+        (should not normally happen with GitHub's own Link headers).
+    """
+    base = base_url.rstrip("/")
+    if absolute_url.startswith(base):
+        remainder = absolute_url[len(base):]
+        return remainder if remainder.startswith("/") else "/" + remainder
+    return absolute_url
