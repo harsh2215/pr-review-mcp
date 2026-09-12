@@ -345,6 +345,62 @@ class GitHubClient:
             params=params,
         )
 
+    def post_review(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        *,
+        commit_id: str,
+        body: str,
+        event: str = "COMMENT",
+        comments: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Submit a pull-request review with optional inline comments.
+
+        This is the **only mutation** method on the client.  It issues a single
+        ``POST /repos/{owner}/{repo}/pulls/{pr_number}/reviews`` request that
+        contains the review body and all inline comments in one atomic call.
+        GitHub posts all comments together with the review, which avoids the
+        duplication risk of multiple requests.
+
+        See:
+        https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request
+
+        Args:
+            owner: Repository owner login.
+            repo: Repository name.
+            pr_number: Pull request number.
+            commit_id: The SHA of the head commit to attach the review to.
+                       Using the latest head SHA prevents stale-diff errors.
+            body: The overall review comment body (markdown).
+            event: Review event type.  One of ``"COMMENT"`` (default),
+                   ``"APPROVE"``, or ``"REQUEST_CHANGES"``.
+            comments: List of inline comment dicts.  Each must contain:
+                      ``path`` (str), ``line`` (int), ``side`` (``"RIGHT"``),
+                      ``body`` (str).
+
+        Returns:
+            The created review object as returned by GitHub.
+
+        Raises:
+            GitHubHTTPError: On API errors (e.g. 422 Unprocessable Entity if a
+                             comment references a line outside the diff).
+        """
+        payload: dict[str, Any] = {
+            "commit_id": commit_id,
+            "body": body,
+            "event": event,
+        }
+        if comments:
+            payload["comments"] = comments
+
+        return self._request(
+            "POST",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+            json=payload,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Link header parsing
