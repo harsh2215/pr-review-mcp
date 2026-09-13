@@ -45,7 +45,9 @@ from repository.normalizer import (
 )
 from review.models import ReviewFinding, ReviewResult, ReviewSummary
 from review.normalizer import build_pr_context
+from review.prompts import get_review_prompt
 from review.submission import ReviewEvent, build_review_payload
+
 from utils.github_url import (
     InvalidGitHubPRURL,
     InvalidGitHubRepoURL,
@@ -351,5 +353,31 @@ def submit_pr_review(
 # Entry point
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# Prompts
+# ---------------------------------------------------------------------------
+
+
+
+@mcp.prompt()
+def pr_review_rubric(
+    concurrency: bool = False,
+    resources: bool = False,
+    security: bool = False,
+) -> str:
+    """The official engineering rubric for reviewing Pull Requests.
+    
+    Use this prompt to instruct Claude on what to look for, how to classify findings,
+    and what format to output.
+    """
+    return get_review_prompt(
+        concurrency=concurrency,
+        resources=resources,
+        security=security,
+    )
+
+
 if __name__ == "__main__":
+    # The default transport is stdio.
     mcp.run()

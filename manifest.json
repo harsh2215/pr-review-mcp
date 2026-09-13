@@ -2,9 +2,9 @@
   "manifest_version": "0.3",
   "name": "pr-review-mcp",
   "display_name": "PR Review",
-  "version": "1.0.0",
-  "description": "Review GitHub Pull Requests with Claude. Fetches PR context, validates findings, and optionally submits structured code reviews.",
-  "long_description": "An MCP server that gives Claude the ability to retrieve GitHub pull requests and submit structured code reviews.\n\n**Claude does the AI reasoning. The MCP server does the GitHub plumbing.**\n\n## Tools\n\n- `review_pull_request` — Fetches and normalises a GitHub PR into a structured context for Claude to review.\n- `submit_pr_review` — Validates Claude's findings against the actual PR diff and optionally submits a GitHub review.\n\n## Requirements\n\n- Python 3.10+ with `mcp`, `httpx`, `pydantic`, and `python-dotenv` installed.\n- A GitHub fine-grained PAT with Contents (read) and Pull requests (read + write) permissions.",
+  "version": "1.1.0",
+  "description": "Review GitHub Pull Requests and explore repository structures with Claude. Fetches PR context, repository files, validates findings, and optionally submits structured code reviews.",
+  "long_description": "An MCP server that gives Claude the ability to retrieve GitHub pull requests, explore repository trees, and submit structured code reviews.\n\n**Claude does the AI reasoning. The MCP server does the GitHub plumbing.**\n\n## Tools\n\n- `review_pull_request` — Fetches and normalises a GitHub PR into a structured context for Claude to review.\n- `get_repository_context` — Explores a repository's structure (Git tree and metadata).\n- `get_repository_file` — Retrieves the content of specific files in the repository.\n- `submit_pr_review` — Validates Claude's findings against the actual PR diff and optionally submits a GitHub review.\n\n## Requirements\n\n- Python 3.10+ with `mcp`, `httpx`, `pydantic`, and `python-dotenv` installed.\n- A GitHub fine-grained PAT with Contents (read) and Pull requests (read + write) permissions.",
   "author": {
     "name": "harsh2215"
   },
@@ -37,8 +37,22 @@
       "description": "Retrieve and normalise a GitHub Pull Request for Claude to review. Read-only. Returns PRContext with diffs, commits, and source content."
     },
     {
+      "name": "get_repository_context",
+      "description": "Retrieve structured repository-level context for a GitHub repository. Returns the repository default branch, the commit SHA of the requested ref, and the complete Git tree."
+    },
+    {
+      "name": "get_repository_file",
+      "description": "Retrieve the contents of a single file from a GitHub repository. Use this tool after exploring the repository structure with get_repository_context to fetch specific files of interest."
+    },
+    {
       "name": "submit_pr_review",
       "description": "Validate Claude's ReviewResult and optionally submit a GitHub review. Use dry_run=true (default) for a safe preview with no GitHub mutation."
+    }
+  ],
+  "prompts": [
+    {
+      "name": "pr_review_rubric",
+      "description": "The official engineering rubric for reviewing Pull Requests."
     }
   ],
   "tools_generated": false,
