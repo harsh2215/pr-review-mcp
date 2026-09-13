@@ -69,3 +69,6 @@ Thumbs.db
 
 # MCP bundle build output
 *.mcpb
+
+# Documentation
+PROGRESS.md
