@@ -106,3 +106,31 @@ class RepositoryContext(BaseModel):
         # Re-serialise tree entries using their own to_dict for clean output.
         d["tree"] = [e.to_dict() for e in self.tree]
         return d
+
+
+class RepositoryFile(BaseModel):
+    """Structured response for a single repository file.
+
+    Returned by the ``get_repository_file`` MCP tool.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    path: str = Field(description="Repository-relative file path.")
+    ref: str = Field(description="The ref/commit SHA from which the file was fetched.")
+    size: int = Field(description="Size of the file in bytes.")
+    content: str | None = Field(
+        default=None,
+        description="Decoded UTF-8 text content of the file. Null if binary.",
+    )
+    is_binary: bool = Field(
+        default=False,
+        description="True if the file was detected as binary and could not be decoded.",
+    )
+    is_truncated: bool = Field(
+        default=False,
+        description="True if the file content was truncated because it exceeded the size limit.",
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(exclude_none=True)

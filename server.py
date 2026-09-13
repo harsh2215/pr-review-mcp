@@ -39,7 +39,10 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from github.client import GitHubAuthError, GitHubClient, GitHubHTTPError
-from repository.normalizer import build_repository_context
+from repository.normalizer import (
+    build_repository_context,
+    build_repository_file,
+)
 from review.models import ReviewFinding, ReviewResult, ReviewSummary
 from review.normalizer import build_pr_context
 from review.submission import ReviewEvent, build_review_payload
@@ -170,6 +173,57 @@ def get_repository_context(repo_url: str, ref: str | None = None) -> dict[str, A
         raise RuntimeError(str(exc)) from exc
 
     return ctx.to_dict()
+
+
+@mcp.tool()
+def get_repository_file(
+    repo_url: str,
+    path: str,
+    ref: str | None = None,
+) -> dict[str, Any]:
+    """Retrieve the contents of a single file from a GitHub repository.
+
+    Use this tool after exploring the repository structure with
+    `get_repository_context` to fetch specific files of interest.
+
+    Args:
+        repo_url: Full GitHub repository URL.
+                  Example: ``https://github.com/owner/repo``
+        path:     Repository-relative path to the file.
+        ref:      Optional branch name, tag, or commit SHA. If omitted, the
+                  repository's default branch is used.
+
+    Returns:
+        A JSON-compatible dict containing:
+        - ``path``, ``ref``, ``size``
+        - ``content``: UTF-8 decoded text content (null if binary).
+        - ``is_binary``: True if the file could not be decoded as text.
+        - ``is_truncated``: True if the file exceeded the 100KB size limit.
+
+    Raises:
+        ValueError: If *repo_url* is invalid, or if *path* points to a directory.
+        RuntimeError: If the GitHub API returns an error (e.g. 404 Not Found).
+    """
+    try:
+        parsed = parse_repo_url(repo_url)
+    except InvalidGitHubRepoURL as exc:
+        raise ValueError(str(exc)) from exc
+
+    try:
+        with GitHubClient() as client:
+            file_ctx = build_repository_file(
+                client,
+                parsed.owner,
+                parsed.repo,
+                path,
+                ref=ref,
+            )
+    except GitHubAuthError as exc:
+        raise RuntimeError(str(exc)) from exc
+    except GitHubHTTPError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    return file_ctx.to_dict()
 
 
 @mcp.tool()

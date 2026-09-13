@@ -2,9 +2,9 @@
 
 _Last updated: 2026-09-13_
 
-## Status: PHASE 2A COMPLETE ✅ (Repository Context)
+## Status: PHASE 2B COMPLETE ✅ (Targeted Repository File Retrieval)
 
-All 306 tests pass (including URL parsing, validation, PR normalisation, Event support, and Repository normalisation).
+All 313 tests pass (including URL parsing, validation, PR normalisation, Event support, and Repository normalisation/file retrieval).
 
 ---
 
@@ -13,10 +13,10 @@ All 306 tests pass (including URL parsing, validation, PR normalisation, Event s
 | File | Status | Purpose |
 |------|--------|---------|
 | `github/client.py` | **Modified** | Added `get_repository`, `get_git_tree`, `get_commit` |
-| `repository/models.py` | **Created** | `RepositoryContext` and `TreeEntry` Pydantic models |
-| `repository/normalizer.py` | **Created** | `build_repository_context()` |
-| `server.py` | **Modified** | Added `get_repository_context(repo_url, ref)` MCP tool |
-| `tests/test_repository.py` | **Created** | Unit/integration tests for repository context |
+| `repository/models.py` | **Created** | `RepositoryContext`, `TreeEntry`, `RepositoryFile` Pydantic models |
+| `repository/normalizer.py` | **Created** | `build_repository_context()`, `build_repository_file()` |
+| `server.py` | **Modified** | Added `get_repository_context(repo_url, ref)` and `get_repository_file(repo_url, path, ref)` MCP tools |
+| `tests/test_repository.py` | **Created** | Unit/integration tests for repository context and file retrieval |
 | `utils/github_url.py` | **Modified** | Added `parse_repo_url` and `InvalidGitHubRepoURL` |
 
 ---
