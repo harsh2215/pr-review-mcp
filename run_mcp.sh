@@ -62,6 +62,14 @@ if ! "${PYTHON}" -c "import mcp" 2>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
+# Startup confirmation  (stderr only — stdout is reserved for MCP protocol)
+# ---------------------------------------------------------------------------
+echo "[pr-review-mcp] ✅ Server starting at $(date '+%Y-%m-%d %H:%M:%S')" >&2
+echo "[pr-review-mcp]    Python : ${PYTHON}" >&2
+echo "[pr-review-mcp]    Project: ${SCRIPT_DIR}" >&2
+echo "[pr-review-mcp]    Tools  : review_pull_request, submit_pr_review" >&2
+
+# ---------------------------------------------------------------------------
 # Launch MCP server via stdio transport (exec forwards stdin/stdout/signals)
 # ---------------------------------------------------------------------------
 exec "${PYTHON}" "${SCRIPT_DIR}/server.py" "$@"

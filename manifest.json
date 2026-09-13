@@ -1,0 +1,54 @@
+{
+  "manifest_version": "0.3",
+  "name": "pr-review-mcp",
+  "display_name": "PR Review",
+  "version": "1.0.0",
+  "description": "Review GitHub Pull Requests with Claude. Fetches PR context, validates findings, and optionally submits structured code reviews.",
+  "long_description": "An MCP server that gives Claude the ability to retrieve GitHub pull requests and submit structured code reviews.\n\n**Claude does the AI reasoning. The MCP server does the GitHub plumbing.**\n\n## Tools\n\n- `review_pull_request` — Fetches and normalises a GitHub PR into a structured context for Claude to review.\n- `submit_pr_review` — Validates Claude's findings against the actual PR diff and optionally submits a GitHub review.\n\n## Requirements\n\n- Python 3.10+ with `mcp`, `httpx`, `pydantic`, and `python-dotenv` installed.\n- A GitHub fine-grained PAT with Contents (read) and Pull requests (read + write) permissions.",
+  "author": {
+    "name": "harsh2215"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harsh2215/pr-review-mcp.git"
+  },
+  "license": "MIT",
+  "keywords": ["github", "pull-request", "code-review", "mcp"],
+  "compatibility": {
+    "platforms": ["linux", "darwin", "win32"],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "python3",
+      "args": ["${__dirname}/server.py"],
+      "env": {
+        "GITHUB_TOKEN": "${user_config.github_token}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "review_pull_request",
+      "description": "Retrieve and normalise a GitHub Pull Request for Claude to review. Read-only. Returns PRContext with diffs, commits, and source content."
+    },
+    {
+      "name": "submit_pr_review",
+      "description": "Validate Claude's ReviewResult and optionally submit a GitHub review. Use dry_run=true (default) for a safe preview with no GitHub mutation."
+    }
+  ],
+  "tools_generated": false,
+  "user_config": {
+    "github_token": {
+      "type": "string",
+      "title": "GitHub Token",
+      "description": "A GitHub fine-grained personal access token. Required permissions: Contents (read), Pull requests (read + write). Create at https://github.com/settings/tokens?type=beta",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}

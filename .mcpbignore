@@ -1,0 +1,30 @@
+# .mcpbignore
+# Exclude files that are not needed inside the installed bundle.
+# Syntax is identical to .gitignore.
+
+# Development / testing
+tests/
+conftest.py
+pytest.ini
+.pytest_cache/
+.env
+.env.*
+.env.example
+
+# Byte-compiled / cached
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Shell launcher (not needed — manifest invokes python3 directly)
+run_mcp.sh
+
+# Development docs (keep README.md)
+PROGRESS.md
+
+# Git artefacts
+.git/
+.gitignore
+
+# Build artefacts
+*.mcpb
