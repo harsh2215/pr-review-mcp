@@ -32,6 +32,7 @@ from review.models import (
 )
 from review.submission import (
     ClassifiedFinding,
+    ReviewEvent,
     ReviewPayload,
     build_inline_comments,
     build_review_body,
@@ -752,3 +753,169 @@ class TestSubmitPrReviewSchema:
         })
         assert s.verdict == "Request changes"
         assert s.strengths == []
+
+
+# ---------------------------------------------------------------------------
+# ReviewEvent validation
+# ---------------------------------------------------------------------------
+
+
+class TestReviewEvent:
+    def test_comment_accepted(self) -> None:
+        assert ReviewEvent.validate("COMMENT") == "COMMENT"
+
+    def test_request_changes_accepted(self) -> None:
+        assert ReviewEvent.validate("REQUEST_CHANGES") == "REQUEST_CHANGES"
+
+    def test_lowercase_comment_accepted(self) -> None:
+        assert ReviewEvent.validate("comment") == "COMMENT"
+
+    def test_lowercase_request_changes_accepted(self) -> None:
+        assert ReviewEvent.validate("request_changes") == "REQUEST_CHANGES"
+
+    def test_mixed_case_accepted(self) -> None:
+        assert ReviewEvent.validate("Comment") == "COMMENT"
+
+    def test_approve_rejected(self) -> None:
+        with pytest.raises(ValueError, match="APPROVE"):
+            ReviewEvent.validate("APPROVE")
+
+    def test_empty_string_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            ReviewEvent.validate("")
+
+    def test_arbitrary_string_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            ReviewEvent.validate("DISMISS")
+
+    def test_error_message_lists_allowed_values(self) -> None:
+        with pytest.raises(ValueError, match="COMMENT"):
+            ReviewEvent.validate("bad")
+
+
+# ---------------------------------------------------------------------------
+# submit_pr_review — event parameter
+# ---------------------------------------------------------------------------
+
+
+class TestSubmitPrReviewEvent:
+    """End-to-end tests for the event parameter through the MCP tool."""
+
+    def test_default_event_is_comment_in_dry_run(self) -> None:
+        with respx.mock:
+            _mock_github_reads()
+            result = submit_pr_review(
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ, dry_run=True
+            )
+        assert result["event"] == "COMMENT"
+
+    def test_explicit_comment_event_in_dry_run(self) -> None:
+        with respx.mock:
+            _mock_github_reads()
+            result = submit_pr_review(
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ,
+                dry_run=True, event="COMMENT",
+            )
+        assert result["event"] == "COMMENT"
+
+    def test_request_changes_event_in_dry_run(self) -> None:
+        with respx.mock:
+            _mock_github_reads()
+            result = submit_pr_review(
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ,
+                dry_run=True, event="REQUEST_CHANGES",
+            )
+        assert result["event"] == "REQUEST_CHANGES"
+
+    def test_lowercase_event_normalised_in_dry_run(self) -> None:
+        with respx.mock:
+            _mock_github_reads()
+            result = submit_pr_review(
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ,
+                dry_run=True, event="request_changes",
+            )
+        assert result["event"] == "REQUEST_CHANGES"
+
+    def test_invalid_event_rejected_before_github_call(self) -> None:
+        """Invalid event must raise ValueError and must never issue any HTTP request."""
+        with respx.mock:
+            # Register reads so any unexpected GET would be caught.
+            _mock_github_reads()
+            with pytest.raises(ValueError, match="(?i)invalid|allowed"):
+                submit_pr_review(
+                    PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ,
+                    dry_run=True, event="APPROVE",
+                )
+
+    def test_approve_event_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            submit_pr_review(
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ,
+                dry_run=True, event="APPROVE",
+            )
+
+    def test_invalid_event_never_posts(self) -> None:
+        """Even with dry_run=False, an invalid event must not POST to GitHub."""
+        with respx.mock:
+            _mock_github_reads()
+            # No POST mock registered — if a POST fires the test will error.
+            with pytest.raises(ValueError):
+                submit_pr_review(
+                    PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ,
+                    dry_run=False, event="INVALID",
+                )
+
+    def test_request_changes_sent_to_github_on_live_submission(self) -> None:
+        """Verify the validated event is passed to the GitHub POST body."""
+        captured: list[dict] = []
+
+        def _capture(request, route):
+            import json
+            captured.append(json.loads(request.content))
+            return httpx.Response(200, json={"id": 42})
+
+        with respx.mock:
+            _mock_github_reads()
+            respx.post(
+                f"{BASE_URL}/repos/{OWNER}/{REPO}/pulls/{PR_NUM}/reviews"
+            ).mock(side_effect=_capture)
+
+            submit_pr_review(
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ,
+                dry_run=False, event="REQUEST_CHANGES",
+            )
+
+        assert captured, "Expected exactly one POST to GitHub reviews endpoint"
+        assert captured[0]["event"] == "REQUEST_CHANGES"
+
+    def test_comment_event_sent_to_github_on_live_submission(self) -> None:
+        captured: list[dict] = []
+
+        def _capture(request, route):
+            import json
+            captured.append(json.loads(request.content))
+            return httpx.Response(200, json={"id": 7})
+
+        with respx.mock:
+            _mock_github_reads()
+            respx.post(
+                f"{BASE_URL}/repos/{OWNER}/{REPO}/pulls/{PR_NUM}/reviews"
+            ).mock(side_effect=_capture)
+
+            submit_pr_review(
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ,
+                dry_run=False, event="COMMENT",
+            )
+
+        assert captured[0]["event"] == "COMMENT"
+
+    def test_dry_run_does_not_post_for_request_changes(self) -> None:
+        with respx.mock:
+            _mock_github_reads()
+            # No POST mock — any POST would cause an error.
+            result = submit_pr_review(
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ,
+                dry_run=True, event="REQUEST_CHANGES",
+            )
+        assert result["submitted"] is False
+        assert result["dry_run"] is True

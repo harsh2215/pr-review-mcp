@@ -51,6 +51,40 @@ _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
 # ---------------------------------------------------------------------------
+# Review event enum
+# ---------------------------------------------------------------------------
+
+
+class ReviewEvent(str):
+    """Allowed values for the GitHub Pull Request Review event field.
+
+    COMMENT        – Submit review comments without explicitly approving or
+                     requesting changes.  Safe default.
+    REQUEST_CHANGES – Indicate that changes are required before the PR can
+                     be merged.
+
+    APPROVE is intentionally excluded from this phase.
+    """
+
+    COMMENT = "COMMENT"
+    REQUEST_CHANGES = "REQUEST_CHANGES"
+
+    @classmethod
+    def validate(cls, value: str) -> "ReviewEvent":
+        """Return the canonical value or raise ValueError for unknown events."""
+        normalised = value.strip().upper()
+        allowed = {cls.COMMENT, cls.REQUEST_CHANGES}
+        if normalised not in allowed:
+            raise ValueError(
+                f"Invalid review event {value!r}. "
+                f"Allowed values: {sorted(allowed)}. "
+                "Note: APPROVE is not supported in this version."
+            )
+        return normalised  # type: ignore[return-value]
+
+
+
+# ---------------------------------------------------------------------------
 # Diff parsing
 # ---------------------------------------------------------------------------
 
@@ -124,6 +158,9 @@ class ReviewPayload:
     pr_number: int
     head_sha: str
 
+    # Review event (COMMENT or REQUEST_CHANGES)
+    event: str = "COMMENT"
+
     # Classified findings
     inline: list[ClassifiedFinding] = field(default_factory=list)
     summary: list[ClassifiedFinding] = field(default_factory=list)
@@ -138,6 +175,7 @@ class ReviewPayload:
         return {
             "pr_number": self.pr_number,
             "head_sha": self.head_sha,
+            "event": self.event,
             "inline_findings": [
                 {
                     "finding_id": cf.finding_id,
@@ -480,6 +518,7 @@ def build_review_payload(
     result: ReviewResult,
     pr_context_files: list[Any],
     head_sha: str,
+    event: str = "COMMENT",
 ) -> ReviewPayload:
     """Validate findings against the current diff and build the full review payload.
 
@@ -494,6 +533,9 @@ def build_review_payload(
         pr_context_files: List of ``ChangedFile`` objects from a freshly
                           fetched ``PRContext`` (not the stale one from Claude).
         head_sha: The current PR head SHA (from the fresh PRContext).
+        event: GitHub review event — "COMMENT" or "REQUEST_CHANGES". Must
+               have been validated by ``ReviewEvent.validate()`` before calling
+               this function.
 
     Returns:
         A fully populated ``ReviewPayload``.
@@ -507,6 +549,7 @@ def build_review_payload(
     return ReviewPayload(
         pr_number=result.pr_number,
         head_sha=head_sha,
+        event=event,
         inline=inline,
         summary=summary,
         discarded=discarded,

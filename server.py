@@ -41,7 +41,7 @@ from mcp.server.fastmcp import FastMCP
 from github.client import GitHubAuthError, GitHubClient, GitHubHTTPError
 from review.models import ReviewFinding, ReviewResult, ReviewSummary
 from review.normalizer import build_pr_context
-from review.submission import build_review_payload
+from review.submission import ReviewEvent, build_review_payload
 from utils.github_url import InvalidGitHubPRURL, parse_pr_url
 
 # ---------------------------------------------------------------------------
@@ -124,6 +124,7 @@ def submit_pr_review(
     findings: list[ReviewFinding],
     summary: ReviewSummary,
     dry_run: bool = True,
+    event: str = "COMMENT",
 ) -> dict[str, Any]:
     """Validate and submit a structured PR code review produced by Claude.
 
@@ -148,17 +149,25 @@ def submit_pr_review(
         summary:  ReviewSummary — see ReviewSummary schema for required fields.
         dry_run:  When True (default) validate and preview with NO GitHub
                   mutation.  When False, post the review to GitHub.
+        event:    GitHub review event. Allowed values:
+                  - "COMMENT" (default) — submit review comments without
+                    requesting changes or approving.
+                  - "REQUEST_CHANGES" — indicate that changes are required
+                    before this PR can be merged.
+                  The value is validated before any GitHub mutation.
+                  APPROVE is not supported in this version.
 
     Returns:
         A dict with keys:
-        - dry_run (bool), pr_number (int), head_sha (str)
+        - dry_run (bool), pr_number (int), head_sha (str), event (str)
         - inline_findings, summary_findings, discarded_findings
         - review_body (str), inline_comments (list)
         - counts: {inline, summary, discarded}
         - submitted (bool), github_review_id (int | None)
 
     Raises:
-        ValueError: pr_url invalid, or findings/summary fail schema validation.
+        ValueError: pr_url invalid, findings/summary fail schema validation,
+                    or event is not an allowed value.
         RuntimeError: GitHub API unreachable or returns an error.
     """
     # -- 1. Parse PR URL --
@@ -167,7 +176,13 @@ def submit_pr_review(
     except InvalidGitHubPRURL as exc:
         raise ValueError(str(exc)) from exc
 
-    # -- 2. Assign stable IDs (FastMCP already validated Pydantic types) --
+    # -- 2. Validate event (before any GitHub interaction) --
+    try:
+        validated_event = ReviewEvent.validate(event)
+    except ValueError:
+        raise
+
+    # -- 3. Assign stable IDs (FastMCP already validated Pydantic types) --
     review_result = ReviewResult.from_findings(
         pr_number=parsed.number,
         findings=findings,
@@ -190,6 +205,7 @@ def submit_pr_review(
                 result=review_result,
                 pr_context_files=ctx.files,
                 head_sha=ctx.head.sha,
+                event=validated_event,
             )
 
             # -- 5. dry_run=True: return preview, no mutation --
@@ -207,7 +223,7 @@ def submit_pr_review(
                 parsed.number,
                 commit_id=payload.head_sha,
                 body=payload.review_body,
-                event="COMMENT",
+                event=validated_event,
                 comments=payload.inline_comments if payload.inline_comments else None,
             )
 
