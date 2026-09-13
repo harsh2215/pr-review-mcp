@@ -23,13 +23,11 @@ Architecture note:
 from __future__ import annotations
 
 import re
-import textwrap
 from dataclasses import dataclass, field
 from typing import Any
 
 from review.models import (
     FindingAction,
-    FindingCategory,
     FindingSeverity,
     ReviewFinding,
     ReviewResult,
@@ -329,17 +327,29 @@ def classify_findings(
 # ---------------------------------------------------------------------------
 
 
-def _severity_emoji(severity: FindingSeverity) -> str:
+def _severity_prefix(severity: FindingSeverity) -> str:
+    """Return a short human-readable severity word — used only in prose, not as a badge."""
     return {
-        FindingSeverity.CRITICAL: "🔴",
-        FindingSeverity.HIGH: "🟠",
-        FindingSeverity.MEDIUM: "🟡",
-        FindingSeverity.LOW: "🔵",
-    }.get(severity, "⚪")
+        FindingSeverity.CRITICAL: "Critical",
+        FindingSeverity.HIGH: "High-priority",
+        FindingSeverity.MEDIUM: "Medium-priority",
+        FindingSeverity.LOW: "Minor",
+    }.get(severity, "")
 
 
-def _category_label(category: FindingCategory) -> str:
-    return category.value.upper()
+def _render_inline_comment_body(f: ReviewFinding) -> str:
+    """Render a clean, human-readable inline diff comment for a single finding.
+
+    Does NOT include finding_id, confidence, category label, or severity badges.
+    """
+    lines: list[str] = []
+    lines.append(f"**{f.title}**")
+    lines.append("")
+    lines.append(f.description)
+    if f.recommendation:
+        lines.append("")
+        lines.append(f"**Fix:** {f.recommendation}")
+    return "\n".join(lines)
 
 
 def build_review_body(
@@ -348,90 +358,89 @@ def build_review_body(
     summary: list[ClassifiedFinding],
     discarded: list[ClassifiedFinding],
 ) -> str:
-    """Render the GitHub review body markdown from classified findings.
+    """Render a clean, professional GitHub review body markdown.
 
-    Inline findings are listed briefly in the body (they appear in full as
-    diff comments).  Summary findings appear in full detail.  Discarded
-    findings are omitted from the body to keep noise low.
+    Produces output that looks like a senior-engineer code review:
+    - No finding IDs, confidence values, or internal category/severity labels.
+    - Summary findings are written as natural prose sections.
+    - Inline findings are NOT duplicated in the body.
+    - No HTML entities or literal backslash-n sequences.
 
     Args:
         result: The full ReviewResult (for summary narrative).
         inline: INLINE classified findings.
         summary: SUMMARY classified findings.
-        discarded: DISCARD classified findings (counts only).
+        discarded: DISCARD classified findings (not rendered).
 
     Returns:
-        A markdown string suitable for the GitHub review body.
+        A clean markdown string suitable for the GitHub review body.
     """
     parts: list[str] = []
 
-    # Header
-    parts.append("## PR Code Review")
+    # --- Header + verdict ---
+    parts.append("## AI Code Review")
     parts.append("")
-    parts.append(f"**Verdict:** {result.summary.verdict}")
+    parts.append(result.summary.verdict)
     parts.append("")
     parts.append(result.summary.overview)
 
-    # Strengths
+    # --- Strengths (only if genuinely useful) ---
     if result.summary.strengths:
         parts.append("")
-        parts.append("### ✅ Strengths")
+        parts.append("### Strengths")
         for s in result.summary.strengths:
             parts.append(f"- {s}")
 
-    # Key risks
-    if result.summary.risks:
+    # --- Summary findings (natural prose, no IDs / confidence) ---
+    if summary:
+        # Group critical/high separately from medium/low for readability.
+        critical_high = [
+            cf for cf in summary
+            if cf.finding.severity in (FindingSeverity.CRITICAL, FindingSeverity.HIGH)
+        ]
+        medium_low = [
+            cf for cf in summary
+            if cf.finding.severity in (FindingSeverity.MEDIUM, FindingSeverity.LOW)
+        ]
+
+        if critical_high:
+            parts.append("")
+            parts.append("### Key concerns")
+            parts.append("")
+            for cf in critical_high:
+                f = cf.finding
+                parts.append(f"**{f.title}**")
+                parts.append("")
+                parts.append(f.description)
+                if f.recommendation:
+                    parts.append("")
+                    parts.append(f"*Recommendation:* {f.recommendation}")
+                parts.append("")
+
+        if medium_low:
+            parts.append("")
+            parts.append("### Other concerns")
+            parts.append("")
+            for cf in medium_low:
+                f = cf.finding
+                parts.append(f"**{f.title}**")
+                parts.append("")
+                parts.append(f.description)
+                if f.recommendation:
+                    parts.append("")
+                    parts.append(f"*Recommendation:* {f.recommendation}")
+                parts.append("")
+
+    # --- Key risks from summary (if not already shown via findings) ---
+    if result.summary.risks and not summary:
         parts.append("")
-        parts.append("### ⚠️ Key Risks")
+        parts.append("### Key concerns")
         for r in result.summary.risks:
             parts.append(f"- {r}")
 
-    # Summary findings (full detail)
-    if summary:
-        parts.append("")
-        parts.append("### 📋 Findings (summary)")
-        parts.append("")
-        for cf in summary:
-            f = cf.finding
-            emoji = _severity_emoji(f.severity)
-            label = _category_label(f.category)
-            parts.append(
-                f"**{f.finding_id}** {emoji} `{f.severity.value.upper()}` · {label}"
-                f" — {f.title}"
-            )
-            parts.append("")
-            parts.append(textwrap.indent(f.description, "> "))
-            parts.append("")
-            parts.append(f"*Recommendation:* {f.recommendation}")
-            parts.append("")
-            parts.append("---")
-            parts.append("")
-
-    # Inline findings (brief cross-reference)
-    if inline:
-        parts.append("")
-        parts.append("### 💬 Inline Comments")
-        parts.append("")
-        parts.append(
-            f"{len(inline)} inline comment(s) have been posted directly on the diff."
-        )
-        for cf in inline:
-            f = cf.finding
-            emoji = _severity_emoji(f.severity)
-            parts.append(
-                f"- **{f.finding_id}** {emoji} `{f.severity.value.upper()}` — {f.title}"
-                f" (`{f.file}` line {f.line})"
-            )
-
-    # Stats footer
-    parts.append("")
-    parts.append("---")
-    parts.append("")
-    total = len(inline) + len(summary)
-    parts.append(
-        f"*{total} finding(s) reported"
-        + (f", {len(discarded)} discarded*" if discarded else "*")
-    )
+    # Strip any trailing blank lines then add a clean separator.
+    while parts and parts[-1] == "":
+        parts.pop()
 
     return "\n".join(parts)
 
@@ -439,8 +448,11 @@ def build_review_body(
 def build_inline_comments(inline: list[ClassifiedFinding]) -> list[dict[str, Any]]:
     """Build the GitHub API inline comment payload from validated INLINE findings.
 
-    Each comment uses the line-based API (``line`` + ``side``) rather than the
-    deprecated position-based API.
+    Each comment is rendered as a natural code-review comment with no internal
+    metadata (no finding_id, no confidence, no category/severity labels).
+
+    Uses the line-based API (``line`` + ``side``) rather than the deprecated
+    position-based API.
 
     Args:
         inline: Validated INLINE ClassifiedFindings (all locations confirmed in diff).
@@ -450,24 +462,11 @@ def build_inline_comments(inline: list[ClassifiedFinding]) -> list[dict[str, Any
     """
     comments: list[dict[str, Any]] = []
     for cf in inline:
-        f = cf.finding
-        body_lines = [
-            f"**{f.finding_id}** {_severity_emoji(f.severity)} "
-            f"`{f.severity.value.upper()}` · {_category_label(f.category)}",
-            "",
-            f"**{f.title}**",
-            "",
-            f.description,
-            "",
-            f"**Recommendation:** {f.recommendation}",
-            "",
-            f"*Confidence: {f.confidence:.0%}*",
-        ]
         comments.append({
-            "path": f.file,
-            "line": f.line,
+            "path": cf.finding.file,
+            "line": cf.finding.line,
             "side": _COMMENT_SIDE,
-            "body": "\n".join(body_lines),
+            "body": _render_inline_comment_body(cf.finding),
         })
     return comments
 
