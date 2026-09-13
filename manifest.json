@@ -49,12 +49,6 @@
       "description": "Validate Claude's ReviewResult and optionally submit a GitHub review. Use dry_run=true (default) for a safe preview with no GitHub mutation."
     }
   ],
-  "prompts": [
-    {
-      "name": "pr_review_rubric",
-      "description": "The official engineering rubric for reviewing Pull Requests."
-    }
-  ],
   "tools_generated": false,
   "user_config": {
     "github_token": {

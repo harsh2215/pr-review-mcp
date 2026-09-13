@@ -36,7 +36,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+try:
+    # MCP v2.x
+    from mcp.server.mcpserver import MCPServer as FastMCP
+except ImportError:
+    # MCP v1.x
+    from mcp.server.fastmcp import FastMCP
 
 from github.client import GitHubAuthError, GitHubClient, GitHubHTTPError
 from repository.normalizer import (
@@ -126,7 +131,10 @@ def review_pull_request(pr_url: str) -> dict:
     except GitHubHTTPError as exc:
         raise RuntimeError(str(exc)) from exc
 
-    return ctx.to_review_dict()
+    # -- Assemble the result: PR context + full review rubric --
+    result = ctx.to_review_dict()
+    result["review_instructions"] = get_review_prompt()
+    return result
 
 
 @mcp.tool()
@@ -352,30 +360,6 @@ def submit_pr_review(
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Prompts
-# ---------------------------------------------------------------------------
-
-
-
-@mcp.prompt()
-def pr_review_rubric(
-    concurrency: bool = False,
-    resources: bool = False,
-    security: bool = False,
-) -> str:
-    """The official engineering rubric for reviewing Pull Requests.
-    
-    Use this prompt to instruct Claude on what to look for, how to classify findings,
-    and what format to output.
-    """
-    return get_review_prompt(
-        concurrency=concurrency,
-        resources=resources,
-        security=security,
-    )
 
 
 if __name__ == "__main__":

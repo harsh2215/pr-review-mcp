@@ -1,6 +1,5 @@
-# MCP Python SDK (v1.x – stable, compatible with Claude Desktop)
-# Using <2 upper-bound until v2 migration is confirmed for the target host.
-mcp>=1.9,<2
+# MCP Python SDK (Compatible with v1.x and v2.x)
+mcp>=1.9
 
 # HTTP client for GitHub REST API calls
 httpx>=0.27,<1

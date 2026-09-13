@@ -25,9 +25,6 @@ from review.prompts import (
     REVIEW_RUBRIC,
     RUBRIC_VERSION,
     get_review_prompt,
-    CONCURRENCY_ALERT,
-    RESOURCE_SAFETY_ALERT,
-    SECURITY_ALERT,
 )
 
 
@@ -484,35 +481,10 @@ class TestReviewPrompts:
     def test_rubric_references_resource_leak(self) -> None:
         assert "resource leak" in REVIEW_RUBRIC.lower() or "resource leaks" in REVIEW_RUBRIC.lower()
 
-    def test_get_review_prompt_base(self) -> None:
+    def test_get_review_prompt_returns_rubric(self) -> None:
         prompt = get_review_prompt()
         assert prompt == REVIEW_RUBRIC
 
-    def test_get_review_prompt_with_concurrency(self) -> None:
-        prompt = get_review_prompt(concurrency=True)
-        assert CONCURRENCY_ALERT in prompt
-        assert RESOURCE_SAFETY_ALERT not in prompt
-
-    def test_get_review_prompt_with_resources(self) -> None:
-        prompt = get_review_prompt(resources=True)
-        assert RESOURCE_SAFETY_ALERT in prompt
-        assert CONCURRENCY_ALERT not in prompt
-
-    def test_get_review_prompt_with_security(self) -> None:
-        prompt = get_review_prompt(security=True)
-        assert SECURITY_ALERT in prompt
-
-    def test_get_review_prompt_all_alerts(self) -> None:
-        prompt = get_review_prompt(concurrency=True, resources=True, security=True)
-        assert CONCURRENCY_ALERT in prompt
-        assert RESOURCE_SAFETY_ALERT in prompt
-        assert SECURITY_ALERT in prompt
-
-    def test_concurrency_alert_non_empty(self) -> None:
-        assert len(CONCURRENCY_ALERT) > 50
-
-    def test_security_alert_non_empty(self) -> None:
-        assert len(SECURITY_ALERT) > 50
-
-    def test_resource_safety_alert_non_empty(self) -> None:
-        assert len(RESOURCE_SAFETY_ALERT) > 50
+    def test_get_review_prompt_is_string(self) -> None:
+        assert isinstance(get_review_prompt(), str)
+        assert len(get_review_prompt()) > 500

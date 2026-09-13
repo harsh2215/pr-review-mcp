@@ -61,6 +61,15 @@ schema defined in `review/models.py`.  Do not produce free-form prose.
 > NOT call, simulate, or assume execution of `submit_pr_review`.  Your sole
 > responsibility is to analyse the supplied `PRContext` and produce structured
 > findings.  Submission is handled separately by the MCP server.
+>
+> **Event selection rule:** When calling `submit_pr_review`, choose the event
+> based on the review outcome:
+> - Use `REQUEST_CHANGES` when the PR has findings that must be addressed before merge.
+> - Use `COMMENT` when the PR looks acceptable or has only minor suggestions.
+> - **If the PR author (`PRContext.author`) is the same GitHub login as the
+>   reviewer (i.e. you are reviewing your own PR), always use `COMMENT` —
+>   GitHub does not permit `REQUEST_CHANGES` from the PR author on their own PR.**
+
 
 
 ## What to inspect
@@ -286,64 +295,14 @@ stability; you may use placeholder IDs like F001, F002, … in order.
 
 
 # ---------------------------------------------------------------------------
-# Targeted prompts for specific categories
-# ---------------------------------------------------------------------------
-
-#: Short reminder injected when the PR touches concurrent/async code.
-CONCURRENCY_ALERT: str = """
-⚠️  This PR modifies concurrent or asynchronous code.
-Pay extra attention to:
-  • Race conditions on shared state
-  • Lock ordering (are locks always acquired in the same order?)
-  • Deadlocks (can any code path hold lock A then try to acquire lock B, while
-    another path holds B and tries to acquire A?)
-  • Missing synchronisation around read-modify-write operations
-  • Thread-safety of data structures used across goroutines/threads
-""".strip()
-
-#: Short reminder injected when the PR touches resource management.
-RESOURCE_SAFETY_ALERT: str = """
-⚠️  This PR modifies code that manages resources (files, connections, locks,
-    memory caches, threads).
-Pay extra attention to:
-  • Are all resources released on ALL code paths, including exception paths?
-  • Are there caches or collections that can grow without bound?
-  • Is every acquired lock, file handle, or socket guaranteed to be released?
-""".strip()
-
-#: Short reminder injected when the PR touches security-sensitive areas.
-SECURITY_ALERT: str = """
-⚠️  This PR touches security-sensitive code (authentication, input handling,
-    data access, serialisation).
-Pay extra attention to:
-  • User-controlled input reaching dangerous sinks (shell, eval, SQL, file path)
-  • Missing or bypassable authorization checks
-  • Credentials or PII appearing in logs, responses, or error messages
-  • Insecure defaults (disabled TLS, permissive CORS, world-readable files)
-""".strip()
-
-
-# ---------------------------------------------------------------------------
 # Public helpers
 # ---------------------------------------------------------------------------
 
-def get_review_prompt(*, concurrency: bool = False, resources: bool = False,
-                      security: bool = False) -> str:
-    """Return the full review prompt, optionally appending targeted alerts.
+def get_review_prompt() -> str:
+    """Return the full review prompt string ready to be passed to Claude.
 
-    Args:
-        concurrency: Append the concurrency alert (e.g. PR touches threads/async).
-        resources:   Append the resource safety alert (e.g. PR touches I/O/caches).
-        security:    Append the security alert (e.g. PR touches auth/input handling).
-
-    Returns:
-        The complete review prompt string ready to be passed to Claude.
+    The rubric already covers all review categories (correctness, performance,
+    security, concurrency, resources, etc.).  Claude applies them based on
+    what it sees in the PR diff — no conditional alerts needed.
     """
-    parts = [REVIEW_RUBRIC]
-    if concurrency:
-        parts.append("\n\n" + CONCURRENCY_ALERT)
-    if resources:
-        parts.append("\n\n" + RESOURCE_SAFETY_ALERT)
-    if security:
-        parts.append("\n\n" + SECURITY_ALERT)
-    return "\n".join(parts)
+    return REVIEW_RUBRIC

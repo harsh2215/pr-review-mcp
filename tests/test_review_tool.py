@@ -495,3 +495,40 @@ class TestPagination:
             "https://api.github.com",
         )
         assert result == "https://other.example.com/path"
+
+
+# ---------------------------------------------------------------------------
+# Rubric injection tests
+# ---------------------------------------------------------------------------
+
+from server import review_pull_request as _tool_review_pull_request
+from review.prompts import REVIEW_RUBRIC
+
+
+class TestRubricInjection:
+    """review_pull_request must embed review_instructions (the rubric) in its response."""
+
+    PR_URL = f"https://github.com/{OWNER}/{REPO}/pull/{PR_NUM}"
+
+    @respx.mock
+    def test_review_instructions_key_is_present(self) -> None:
+        _mock_standard_pr()
+        result = _tool_review_pull_request(self.PR_URL)
+        assert "review_instructions" in result, (
+            "review_pull_request must include a 'review_instructions' key "
+            "so Claude receives the rubric via the tool-calling path."
+        )
+
+    @respx.mock
+    def test_review_instructions_is_full_rubric(self) -> None:
+        _mock_standard_pr()
+        result = _tool_review_pull_request(self.PR_URL)
+        assert result["review_instructions"] == REVIEW_RUBRIC
+
+    @respx.mock
+    def test_review_instructions_contains_key_categories(self) -> None:
+        _mock_standard_pr()
+        result = _tool_review_pull_request(self.PR_URL)
+        rubric = result["review_instructions"]
+        for category in ["CORRECTNESS", "PERFORMANCE", "SECURITY", "CONCURRENCY", "TESTING"]:
+            assert category in rubric, f"Rubric missing category: {category}"
