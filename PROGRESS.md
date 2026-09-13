@@ -1,10 +1,10 @@
-# PR Review MCP – Phase 1 Progress Tracker
+# PR Review MCP – Progress Tracker
 
 _Last updated: 2026-09-13_
 
-## Status: PHASE 1 COMPLETE ✅  (review contract implemented)
+## Status: PHASE 2A COMPLETE ✅ (Repository Context)
 
-All 160 tests pass (93 Phase-1a + 67 new Phase-1b).
+All 306 tests pass (including URL parsing, validation, PR normalisation, Event support, and Repository normalisation).
 
 ---
 
@@ -12,13 +12,12 @@ All 160 tests pass (93 Phase-1a + 67 new Phase-1b).
 
 | File | Status | Purpose |
 |------|--------|---------|
-| `github/client.py` | **Modified** | Added `_paginate()`, `_parse_next_link()`, `_abs_to_relative()` |
-| `review/models.py` | **Created** | `PRContext`, `RepoInfo`, `BranchRef`, `CommitInfo`, `ChangedFile` Pydantic models |
-| `review/normalizer.py` | **Created** | `build_pr_context()` — GitHub API → PRContext normalizer |
-| `review/__init__.py` | **Modified** | Exports key review package symbols |
-| `server.py` | **Rewritten** | `review_pull_request(pr_url)` MCP tool (thin: parse → fetch → normalize → return) |
-| `tests/test_review_tool.py` | **Created** | 25 unit tests (normalisation, source fetch, errors, pagination) |
-| `tests/test_integration.py` | **Created** | 18 live read-only tests against PR #2 of demo repo |
+| `github/client.py` | **Modified** | Added `get_repository`, `get_git_tree`, `get_commit` |
+| `repository/models.py` | **Created** | `RepositoryContext` and `TreeEntry` Pydantic models |
+| `repository/normalizer.py` | **Created** | `build_repository_context()` |
+| `server.py` | **Modified** | Added `get_repository_context(repo_url, ref)` MCP tool |
+| `tests/test_repository.py` | **Created** | Unit/integration tests for repository context |
+| `utils/github_url.py` | **Modified** | Added `parse_repo_url` and `InvalidGitHubRepoURL` |
 
 ---
 

@@ -10,8 +10,10 @@ import pytest
 
 from utils.github_url import (
     InvalidGitHubPRURL,
+    InvalidGitHubRepoURL,
     ParsedPRURL,
     parse_pr_url,
+    parse_repo_url,
 )
 
 
@@ -76,6 +78,51 @@ class TestValidPRURLs:
         with pytest.raises((AttributeError, TypeError)):
             result.owner = "other"  # type: ignore[misc]
 
+
+# ---------------------------------------------------------------------------
+# Repo URL parsing
+# ---------------------------------------------------------------------------
+
+class TestParseRepoUrl:
+    def test_valid_repo_urls(self) -> None:
+        valid_urls = [
+            ("https://github.com/owner/repo", "owner", "repo"),
+            ("https://github.com/owner-123/repo_name.test", "owner-123", "repo_name.test"),
+            ("https://github.com/owner/repo/", "owner", "repo"),
+            ("https://github.com/owner/repo////", "owner", "repo"),
+        ]
+        for url, expected_owner, expected_repo in valid_urls:
+            parsed = parse_repo_url(url)
+            assert parsed.owner == expected_owner
+            assert parsed.repo == expected_repo
+
+    def test_parsed_repo_url_str(self) -> None:
+        parsed = parse_repo_url("https://github.com/owner/repo/")
+        assert str(parsed) == "https://github.com/owner/repo"
+
+    def test_invalid_scheme(self) -> None:
+        with pytest.raises(ValueError, match="https://"):
+            parse_repo_url("http://github.com/owner/repo")
+
+    def test_not_github(self) -> None:
+        with pytest.raises(ValueError, match="must match"):
+            parse_repo_url("https://gitlab.com/owner/repo")
+
+    def test_missing_repo(self) -> None:
+        with pytest.raises(ValueError, match="must match"):
+            parse_repo_url("https://github.com/owner")
+
+    def test_extra_path_components(self) -> None:
+        with pytest.raises(ValueError, match="must match"):
+            parse_repo_url("https://github.com/owner/repo/pull/1")
+
+    def test_empty_string(self) -> None:
+        with pytest.raises(ValueError, match="non-empty string"):
+            parse_repo_url("")
+
+    def test_none(self) -> None:
+        with pytest.raises(ValueError, match="non-empty string"):
+            parse_repo_url(None)  # type: ignore
 
 # ---------------------------------------------------------------------------
 # Malformed URL cases

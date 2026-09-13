@@ -1,18 +1,23 @@
 """
 utils/github_url.py
 -------------------
-Parse GitHub Pull Request URLs into structured components.
+Parse GitHub Pull Request and Repository URLs into structured components.
 
 Supports exactly:
-    https://github.com/<owner>/<repo>/pull/<number>
+    PR:   https://github.com/<owner>/<repo>/pull/<number>
+    Repo: https://github.com/<owner>/<repo>
 
-Raises InvalidGitHubPRURL for anything else.
+Raises InvalidGitHubPRURL / InvalidGitHubRepoURL for anything else.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+
+# ---------------------------------------------------------------------------
+# Pull Request URL
+# ---------------------------------------------------------------------------
 
 # Compiled once at import time.
 _PR_URL_RE = re.compile(
@@ -93,4 +98,79 @@ def parse_pr_url(url: str) -> ParsedPRURL:
         owner=match.group("owner"),
         repo=match.group("repo"),
         number=int(match.group("number")),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Repository URL
+# ---------------------------------------------------------------------------
+
+_REPO_URL_RE = re.compile(
+    r"^https://github\.com/"
+    r"(?P<owner>[A-Za-z0-9_.\-]+)"
+    r"/"
+    r"(?P<repo>[A-Za-z0-9_.\-]+)$"
+)
+
+
+class InvalidGitHubRepoURL(ValueError):
+    """Raised when a URL does not match the expected GitHub repository format.
+
+    Attributes:
+        url: The original URL that was rejected.
+        reason: A human-readable explanation of why it was rejected.
+    """
+
+    def __init__(self, url: str, reason: str) -> None:
+        self.url = url
+        self.reason = reason
+        super().__init__(f"Invalid GitHub repository URL {url!r}: {reason}")
+
+
+@dataclass(frozen=True)
+class ParsedRepoURL:
+    """Components extracted from a valid GitHub repository URL."""
+
+    owner: str
+    repo: str
+
+    def __str__(self) -> str:
+        return f"https://github.com/{self.owner}/{self.repo}"
+
+
+def parse_repo_url(url: str) -> ParsedRepoURL:
+    """Parse a GitHub repository URL and return its components.
+
+    Accepts:
+        ``https://github.com/<owner>/<repo>``
+
+    A trailing slash is stripped before matching.
+
+    Args:
+        url: Repository URL string.
+
+    Returns:
+        A :class:`ParsedRepoURL` with ``owner`` and ``repo``.
+
+    Raises:
+        InvalidGitHubRepoURL: If *url* is not a well-formed GitHub repository URL.
+    """
+    if not url or not isinstance(url, str):
+        raise InvalidGitHubRepoURL(str(url), "URL must be a non-empty string")
+
+    url = url.strip().rstrip("/")
+
+    if not url.startswith("https://"):
+        raise InvalidGitHubRepoURL(url, "URL must use the https:// scheme")
+
+    match = _REPO_URL_RE.fullmatch(url)
+    if match is None:
+        raise InvalidGitHubRepoURL(
+            url,
+            "URL must match https://github.com/<owner>/<repo>",
+        )
+
+    return ParsedRepoURL(
+        owner=match.group("owner"),
+        repo=match.group("repo"),
     )

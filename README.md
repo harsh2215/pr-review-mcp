@@ -30,6 +30,7 @@ Validate against real diff  ──►  Submit (or dry-run)
 | Tool | Description |
 |------|-------------|
 | `review_pull_request` | Fetches and normalises a GitHub PR — diffs, commits, source content. Read-only. |
+| `get_repository_context` | Fetches repository metadata and the Git tree (file/directory paths) for a given branch/commit without fetching file contents. Read-only. |
 | `submit_pr_review` | Validates Claude's findings against the real diff and submits a GitHub review. Use `dry_run=True` (default) to preview without mutating GitHub. |
 
 ---

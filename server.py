@@ -39,10 +39,16 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from github.client import GitHubAuthError, GitHubClient, GitHubHTTPError
+from repository.normalizer import build_repository_context
 from review.models import ReviewFinding, ReviewResult, ReviewSummary
 from review.normalizer import build_pr_context
 from review.submission import ReviewEvent, build_review_payload
-from utils.github_url import InvalidGitHubPRURL, parse_pr_url
+from utils.github_url import (
+    InvalidGitHubPRURL,
+    InvalidGitHubRepoURL,
+    parse_pr_url,
+    parse_repo_url,
+)
 
 # ---------------------------------------------------------------------------
 # Server instance
@@ -116,6 +122,54 @@ def review_pull_request(pr_url: str) -> dict:
         raise RuntimeError(str(exc)) from exc
 
     return ctx.to_review_dict()
+
+
+@mcp.tool()
+def get_repository_context(repo_url: str, ref: str | None = None) -> dict[str, Any]:
+    """Retrieve structured repository-level context for a GitHub repository.
+
+    This tool helps Claude understand a repository's structure and metadata
+    without fetching full file contents. It returns the repository default
+    branch, the commit SHA of the requested ref, and the complete Git tree
+    (file and directory paths).
+
+    Args:
+        repo_url: Full GitHub repository URL.
+                  Example: ``https://github.com/owner/repo``
+        ref:      Optional branch name, tag, or commit SHA. If omitted, the
+                  repository's default branch is used.
+
+    Returns:
+        A JSON-compatible dict representing a ``RepositoryContext``. Keys:
+        - ``owner``, ``repo``, ``full_name``, ``description``
+        - ``default_branch``, ``private``
+        - ``ref``, ``commit_sha``, ``tree_sha``, ``tree_truncated``
+        - ``tree``: list of ``{"path": str, "type": "blob" | "tree"}``
+
+    Raises:
+        ValueError: If *repo_url* is not a valid GitHub repository URL, or
+                    if the repository/ref cannot be found.
+        RuntimeError: If the GitHub API is unreachable or returns an error.
+    """
+    try:
+        parsed = parse_repo_url(repo_url)
+    except InvalidGitHubRepoURL as exc:
+        raise ValueError(str(exc)) from exc
+
+    try:
+        with GitHubClient() as client:
+            ctx = build_repository_context(
+                client,
+                parsed.owner,
+                parsed.repo,
+                ref=ref,
+            )
+    except GitHubAuthError as exc:
+        raise RuntimeError(str(exc)) from exc
+    except GitHubHTTPError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    return ctx.to_dict()
 
 
 @mcp.tool()

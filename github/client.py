@@ -345,6 +345,84 @@ class GitHubClient:
             params=params,
         )
 
+    def get_repository(self, owner: str, repo: str) -> dict[str, Any]:
+        """Fetch metadata for a GitHub repository.
+
+        See: https://docs.github.com/en/rest/repos/repos#get-a-repository
+
+        Args:
+            owner: Repository owner (user or organisation login).
+            repo:  Repository name.
+
+        Returns:
+            The repository object from the GitHub REST API.  Key fields include
+            ``default_branch``, ``description``, ``full_name``, ``private``.
+
+        Raises:
+            GitHubHTTPError: On API errors (e.g. 404 not found).
+        """
+        return self._request("GET", f"/repos/{owner}/{repo}")
+
+    def get_git_tree(
+        self,
+        owner: str,
+        repo: str,
+        tree_sha: str,
+        *,
+        recursive: bool = True,
+    ) -> dict[str, Any]:
+        """Fetch the Git tree for a given SHA.
+
+        See: https://docs.github.com/en/rest/git/trees#get-a-tree
+
+        When *recursive=True* (the default), GitHub expands sub-trees into a
+        flat list of all paths.  For very large repositories GitHub may
+        truncate the result (``truncated: true`` in the response) — the caller
+        should handle this gracefully.
+
+        This method fetches tree metadata only (path, type, mode, sha, size).
+        It does NOT fetch file contents.
+
+        Args:
+            owner:    Repository owner.
+            repo:     Repository name.
+            tree_sha: The SHA of the tree or commit object to fetch.
+            recursive: When True (default), expand all sub-trees recursively.
+
+        Returns:
+            The tree object: ``{sha, url, tree: [{path, mode, type, sha, ...}],
+            truncated}``.
+
+        Raises:
+            GitHubHTTPError: On API errors.
+        """
+        params: dict[str, str] = {}
+        if recursive:
+            params["recursive"] = "1"
+        return self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/git/trees/{tree_sha}",
+            params=params,
+        )
+
+    def get_commit(self, owner: str, repo: str, ref: str) -> dict[str, Any]:
+        """Fetch a single commit by SHA or ref name.
+
+        See: https://docs.github.com/en/rest/commits/commits#get-a-commit
+
+        Args:
+            owner: Repository owner.
+            repo:  Repository name.
+            ref:   Branch name, tag, or commit SHA.
+
+        Returns:
+            The commit object.  Key field: ``commit.tree.sha``.
+
+        Raises:
+            GitHubHTTPError: On API errors.
+        """
+        return self._request("GET", f"/repos/{owner}/{repo}/commits/{ref}")
+
     def post_review(
         self,
         owner: str,
