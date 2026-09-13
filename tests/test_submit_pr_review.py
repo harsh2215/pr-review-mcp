@@ -386,32 +386,40 @@ FAKE_COMMITS = [{
     },
 }]
 
-FINDING_INLINE = {
-    "finding_id": "F001",
-    "category": "correctness",
-    "severity": "high",
-    "confidence": 0.9,
-    "file": "src/app.py",
-    "line": 11,
-    "title": "Off-by-one",
-    "description": "Loop iterates too far.",
-    "recommendation": "Use < instead of <=.",
-    "action": "inline",
-}
+FINDING_INLINE = ReviewFinding(
+    finding_id="F001",
+    category="correctness",
+    severity="high",
+    confidence=0.9,
+    file="src/app.py",
+    line=11,
+    title="Off-by-one",
+    description="Loop iterates too far.",
+    recommendation="Use < instead of <=.",
+    action="inline",
+)
 
-FINDING_SUMMARY = {
-    "finding_id": "F002",
-    "category": "testing",
-    "severity": "medium",
-    "confidence": 0.6,
-    "file": None,
-    "line": None,
-    "title": "Missing concurrency test",
-    "description": "No test covers the concurrent path.",
-    "recommendation": "Add a thread-safety test.",
-    "action": "summary",
-}
+FINDING_SUMMARY = ReviewFinding(
+    finding_id="F002",
+    category="testing",
+    severity="medium",
+    confidence=0.6,
+    file=None,
+    line=None,
+    title="Missing concurrency test",
+    description="No test covers the concurrent path.",
+    recommendation="Add a thread-safety test.",
+    action="summary",
+)
 
+SUMMARY_OBJ = ReviewSummary(
+    verdict="Request changes",
+    overview="Two issues found.",
+    strengths=[],
+    risks=["Race condition"],
+)
+
+# Keep the dict form for the malformed-input tests below.
 SUMMARY_DICT = {
     "verdict": "Request changes",
     "overview": "Two issues found.",
@@ -442,7 +450,7 @@ class TestSubmitPrReviewTool:
             result = submit_pr_review(
                 PR_URL,
                 findings=[FINDING_INLINE],
-                summary=SUMMARY_DICT,
+                summary=SUMMARY_OBJ,
                 dry_run=True,
             )
         assert result["dry_run"] is True
@@ -453,7 +461,7 @@ class TestSubmitPrReviewTool:
         with respx.mock:
             _mock_github_reads()
             result = submit_pr_review(
-                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_DICT, dry_run=True
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ, dry_run=True
             )
         # head_sha comes from the freshly fetched PR, not Claude's input.
         assert result["head_sha"] == "head456"
@@ -462,7 +470,7 @@ class TestSubmitPrReviewTool:
         with respx.mock:
             _mock_github_reads()
             result = submit_pr_review(
-                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_DICT, dry_run=True
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ, dry_run=True
             )
         assert result["counts"]["inline"] == 1
         assert result["counts"]["summary"] == 0
@@ -471,47 +479,47 @@ class TestSubmitPrReviewTool:
         with respx.mock:
             _mock_github_reads()
             result = submit_pr_review(
-                PR_URL, findings=[FINDING_SUMMARY], summary=SUMMARY_DICT, dry_run=True
+                PR_URL, findings=[FINDING_SUMMARY], summary=SUMMARY_OBJ, dry_run=True
             )
         assert result["counts"]["summary"] == 1
         assert result["counts"]["inline"] == 0
 
     def test_dry_run_invalid_file_downgraded_to_summary(self) -> None:
-        bad_file = {**FINDING_INLINE, "file": "nonexistent.py"}
+        bad_file = FINDING_INLINE.model_copy(update={"file": "nonexistent.py"})
         with respx.mock:
             _mock_github_reads()
             result = submit_pr_review(
-                PR_URL, findings=[bad_file], summary=SUMMARY_DICT, dry_run=True
+                PR_URL, findings=[bad_file], summary=SUMMARY_OBJ, dry_run=True
             )
         assert result["counts"]["inline"] == 0
         assert result["counts"]["summary"] == 1
 
     def test_dry_run_invalid_line_downgraded_to_summary(self) -> None:
-        bad_line = {**FINDING_INLINE, "line": 9999}
+        bad_line = FINDING_INLINE.model_copy(update={"line": 9999})
         with respx.mock:
             _mock_github_reads()
             result = submit_pr_review(
-                PR_URL, findings=[bad_line], summary=SUMMARY_DICT, dry_run=True
+                PR_URL, findings=[bad_line], summary=SUMMARY_OBJ, dry_run=True
             )
         assert result["counts"]["inline"] == 0
         assert result["counts"]["summary"] == 1
 
     def test_dry_run_low_confidence_discarded(self) -> None:
-        low_conf = {**FINDING_INLINE, "confidence": 0.3}
+        low_conf = FINDING_INLINE.model_copy(update={"confidence": 0.3})
         with respx.mock:
             _mock_github_reads()
             result = submit_pr_review(
-                PR_URL, findings=[low_conf], summary=SUMMARY_DICT, dry_run=True
+                PR_URL, findings=[low_conf], summary=SUMMARY_OBJ, dry_run=True
             )
         assert result["counts"]["discarded"] == 1
         assert result["counts"]["inline"] == 0
 
     def test_dry_run_multiple_inline_in_single_payload(self) -> None:
-        f2 = {**FINDING_INLINE, "finding_id": "F002", "line": 12}
+        f2 = FINDING_INLINE.model_copy(update={"finding_id": "F002", "line": 12})
         with respx.mock:
             _mock_github_reads()
             result = submit_pr_review(
-                PR_URL, findings=[FINDING_INLINE, f2], summary=SUMMARY_DICT, dry_run=True
+                PR_URL, findings=[FINDING_INLINE, f2], summary=SUMMARY_OBJ, dry_run=True
             )
         assert result["counts"]["inline"] == 2
         assert len(result["inline_comments"]) == 2
@@ -520,26 +528,27 @@ class TestSubmitPrReviewTool:
         with respx.mock:
             _mock_github_reads()
             result = submit_pr_review(
-                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_DICT, dry_run=True
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ, dry_run=True
             )
         assert len(result["review_body"]) > 50
 
     def test_dry_run_malformed_finding_raises_value_error(self) -> None:
-        bad_finding = {"finding_id": "F001", "category": "not_valid"}
-        with pytest.raises(ValueError, match="[Ii]nvalid"):
-            submit_pr_review(PR_URL, findings=[bad_finding], summary=SUMMARY_DICT, dry_run=True)
+        """Invalid enum value in a finding dict is caught by Pydantic."""
+        with pytest.raises((ValueError, Exception)):
+            ReviewFinding.model_validate({"finding_id": "F001", "category": "not_valid"})
 
     def test_dry_run_malformed_summary_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match="[Ii]nvalid"):
-            submit_pr_review(PR_URL, findings=[], summary={"wrong": "keys"}, dry_run=True)
+        """Missing required summary fields are caught by Pydantic."""
+        with pytest.raises((ValueError, Exception)):
+            ReviewSummary.model_validate({"wrong": "keys"})
 
     def test_dry_run_unchanged_line_downgraded_to_summary(self) -> None:
         # Line 10 is a context line (not +) in SAMPLE_PATCH – NOT commentable.
-        unchanged = {**FINDING_INLINE, "line": 10}
+        unchanged = FINDING_INLINE.model_copy(update={"line": 10})
         with respx.mock:
             _mock_github_reads()
             result = submit_pr_review(
-                PR_URL, findings=[unchanged], summary=SUMMARY_DICT, dry_run=True
+                PR_URL, findings=[unchanged], summary=SUMMARY_OBJ, dry_run=True
             )
         assert result["counts"]["inline"] == 0
         assert result["counts"]["summary"] == 1
@@ -554,7 +563,7 @@ class TestSubmitPrReviewTool:
             ).mock(return_value=httpx.Response(200, json={"id": 999}))
 
             result = submit_pr_review(
-                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_DICT, dry_run=False
+                PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ, dry_run=False
             )
 
         assert result["submitted"] is True
@@ -571,5 +580,175 @@ class TestSubmitPrReviewTool:
 
             with pytest.raises(RuntimeError, match="422"):
                 submit_pr_review(
-                    PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_DICT, dry_run=False
+                    PR_URL, findings=[FINDING_INLINE], summary=SUMMARY_OBJ, dry_run=False
                 )
+
+
+# ---------------------------------------------------------------------------
+# Schema exposure tests
+# ---------------------------------------------------------------------------
+
+
+class TestSubmitPrReviewSchema:
+    """Verify the MCP tool exposes a complete, unambiguous input schema to Claude."""
+
+    def _get_schema(self) -> dict:
+        from server import mcp
+        tools = mcp._tool_manager.list_tools()
+        for t in tools:
+            if t.name == "submit_pr_review":
+                return t.parameters
+        raise AssertionError("submit_pr_review tool not found")
+
+    def test_schema_has_defs_for_review_finding(self) -> None:
+        schema = self._get_schema()
+        assert "ReviewFinding" in schema.get("$defs", {})
+
+    def test_schema_has_defs_for_review_summary(self) -> None:
+        schema = self._get_schema()
+        assert "ReviewSummary" in schema.get("$defs", {})
+
+    def test_schema_has_defs_for_finding_category(self) -> None:
+        schema = self._get_schema()
+        assert "FindingCategory" in schema.get("$defs", {})
+
+    def test_schema_has_defs_for_finding_severity(self) -> None:
+        schema = self._get_schema()
+        assert "FindingSeverity" in schema.get("$defs", {})
+
+    def test_schema_has_defs_for_finding_action(self) -> None:
+        schema = self._get_schema()
+        assert "FindingAction" in schema.get("$defs", {})
+
+    def test_category_enum_values_exposed(self) -> None:
+        schema = self._get_schema()
+        enum_vals = schema["$defs"]["FindingCategory"]["enum"]
+        assert set(enum_vals) == {
+            "correctness", "performance", "quality", "architecture",
+            "security", "concurrency", "memory", "testing",
+        }
+
+    def test_severity_enum_values_exposed(self) -> None:
+        schema = self._get_schema()
+        enum_vals = schema["$defs"]["FindingSeverity"]["enum"]
+        assert set(enum_vals) == {"critical", "high", "medium", "low"}
+
+    def test_action_enum_values_exposed(self) -> None:
+        schema = self._get_schema()
+        enum_vals = schema["$defs"]["FindingAction"]["enum"]
+        assert set(enum_vals) == {"inline", "summary", "discard"}
+
+    def test_confidence_has_min_max_constraints(self) -> None:
+        schema = self._get_schema()
+        conf = schema["$defs"]["ReviewFinding"]["properties"]["confidence"]
+        assert conf["minimum"] == 0.0
+        assert conf["maximum"] == 1.0
+
+    def test_finding_required_fields_listed(self) -> None:
+        schema = self._get_schema()
+        required = set(schema["$defs"]["ReviewFinding"]["required"])
+        # Core required fields that Claude must always provide.
+        assert {"category", "severity", "confidence", "title",
+                "description", "recommendation", "action"} <= required
+
+    def test_file_and_line_are_optional(self) -> None:
+        schema = self._get_schema()
+        required = set(schema["$defs"]["ReviewFinding"]["required"])
+        assert "file" not in required
+        assert "line" not in required
+
+    def test_summary_required_fields_listed(self) -> None:
+        schema = self._get_schema()
+        required = set(schema["$defs"]["ReviewSummary"]["required"])
+        assert {"verdict", "overview"} <= required
+
+    def test_findings_param_references_review_finding(self) -> None:
+        schema = self._get_schema()
+        items = schema["properties"]["findings"]["items"]
+        assert "$ref" in items
+        assert "ReviewFinding" in items["$ref"]
+
+    def test_summary_param_references_review_summary(self) -> None:
+        schema = self._get_schema()
+        summary_param = schema["properties"]["summary"]
+        assert "$ref" in summary_param
+        assert "ReviewSummary" in summary_param["$ref"]
+
+    def test_dry_run_defaults_to_true(self) -> None:
+        schema = self._get_schema()
+        assert schema["properties"]["dry_run"]["default"] is True
+
+    # --- Pydantic model validation (source of truth) ---
+
+    def test_invalid_category_enum_rejected(self) -> None:
+        with pytest.raises(Exception):
+            ReviewFinding.model_validate({
+                "finding_id": "F001", "category": "not_a_category",
+                "severity": "high", "confidence": 0.9,
+                "title": "T", "description": "D", "recommendation": "R", "action": "inline",
+            })
+
+    def test_invalid_severity_enum_rejected(self) -> None:
+        with pytest.raises(Exception):
+            ReviewFinding.model_validate({
+                "finding_id": "F001", "category": "correctness",
+                "severity": "extreme", "confidence": 0.9,
+                "title": "T", "description": "D", "recommendation": "R", "action": "inline",
+            })
+
+    def test_invalid_action_enum_rejected(self) -> None:
+        with pytest.raises(Exception):
+            ReviewFinding.model_validate({
+                "finding_id": "F001", "category": "correctness",
+                "severity": "high", "confidence": 0.9,
+                "title": "T", "description": "D", "recommendation": "R", "action": "unknown",
+            })
+
+    def test_confidence_above_1_rejected(self) -> None:
+        with pytest.raises(Exception):
+            ReviewFinding.model_validate({
+                "finding_id": "F001", "category": "correctness",
+                "severity": "high", "confidence": 1.5,
+                "title": "T", "description": "D", "recommendation": "R", "action": "inline",
+            })
+
+    def test_confidence_below_0_rejected(self) -> None:
+        with pytest.raises(Exception):
+            ReviewFinding.model_validate({
+                "finding_id": "F001", "category": "correctness",
+                "severity": "high", "confidence": -0.1,
+                "title": "T", "description": "D", "recommendation": "R", "action": "inline",
+            })
+
+    def test_missing_required_finding_fields_rejected(self) -> None:
+        with pytest.raises(Exception):
+            ReviewFinding.model_validate({"finding_id": "F001"})
+
+    def test_missing_required_summary_fields_rejected(self) -> None:
+        with pytest.raises(Exception):
+            ReviewSummary.model_validate({"strengths": ["nice"]})
+
+    def test_valid_finding_accepted(self) -> None:
+        f = ReviewFinding.model_validate({
+            "finding_id": "F001",
+            "category": "security",
+            "severity": "critical",
+            "confidence": 0.95,
+            "file": "src/auth.py",
+            "line": 42,
+            "title": "SQL injection risk",
+            "description": "User input concatenated directly into query.",
+            "recommendation": "Use parameterised queries.",
+            "action": "inline",
+        })
+        assert f.category.value == "security"
+        assert f.severity.value == "critical"
+        assert f.confidence == 0.95
+
+    def test_valid_summary_accepted(self) -> None:
+        s = ReviewSummary.model_validate({
+            "verdict": "Request changes",
+            "overview": "Two issues found.",
+        })
+        assert s.verdict == "Request changes"
+        assert s.strengths == []

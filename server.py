@@ -39,7 +39,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from github.client import GitHubAuthError, GitHubClient, GitHubHTTPError
-from review.models import ReviewResult, ReviewSummary
+from review.models import ReviewFinding, ReviewResult, ReviewSummary
 from review.normalizer import build_pr_context
 from review.submission import build_review_payload
 from utils.github_url import InvalidGitHubPRURL, parse_pr_url
@@ -121,54 +121,45 @@ def review_pull_request(pr_url: str) -> dict:
 @mcp.tool()
 def submit_pr_review(
     pr_url: str,
-    findings: list[dict[str, Any]],
-    summary: dict[str, Any],
+    findings: list[ReviewFinding],
+    summary: ReviewSummary,
     dry_run: bool = True,
 ) -> dict[str, Any]:
     """Validate and submit a structured PR code review produced by Claude.
 
-    This tool accepts the ``ReviewResult`` that Claude produced after calling
-    ``review_pull_request``, validates every finding against the *current*
-    PR diff, and either returns a dry-run preview or submits the review to
-    GitHub.
+    Call this after ``review_pull_request`` once you have analysed the PR.
 
-    **Review generation is read-only.**  This tool is the only place where
-    a GitHub mutation may occur, and only when ``dry_run=False``.
+    **Schema is enforced by Pydantic.** The MCP framework exposes the full
+    ``ReviewFinding`` and ``ReviewSummary`` JSON schemas automatically;
+    invalid enum values, out-of-range confidence, or missing required fields
+    are rejected before any GitHub interaction.
 
-    Submission uses a single atomic GitHub API call (one review object with
-    all inline comments embedded).  This minimises the window for duplication.
-    Note: without persistent idempotency storage, exactly-once submission
-    cannot be guaranteed across client retries.
+    finding_id is assigned automatically (F001, F002, …); you may pass any
+    placeholder or omit it — the server overwrites it.
+
+    Inline findings (action="inline") MUST reference an actual changed line
+    in the PR diff (file + line present in the unified diff).  Lines not in
+    the diff are downgraded to action="summary" automatically.
 
     Args:
-        pr_url: Full GitHub PR URL (same as passed to ``review_pull_request``).
-        findings: List of finding dicts conforming to the ``ReviewFinding``
-                  schema.  Typically the ``findings`` field of Claude's
-                  ``ReviewResult`` JSON output.
-        summary: Dict conforming to the ``ReviewSummary`` schema.  Typically
-                 the ``summary`` field of Claude's ``ReviewResult`` JSON output.
-        dry_run: When ``True`` (default) perform all validation and return a
-                 complete preview with **no GitHub mutation**.  When ``False``
-                 submit the review to GitHub.
+        pr_url:   Full GitHub PR URL (same as passed to ``review_pull_request``).
+        findings: List of ReviewFinding objects — see ReviewFinding schema for
+                  required/optional fields, enum values, and confidence range.
+        summary:  ReviewSummary — see ReviewSummary schema for required fields.
+        dry_run:  When True (default) validate and preview with NO GitHub
+                  mutation.  When False, post the review to GitHub.
 
     Returns:
-        A dict with the following top-level keys:
-
-        - ``dry_run`` (bool): Whether this was a dry run.
-        - ``pr_number`` (int): The PR number.
-        - ``head_sha`` (str): The current head commit SHA (re-fetched).
-        - ``inline_findings``: Validated INLINE findings with their location.
-        - ``summary_findings``: SUMMARY findings.
-        - ``discarded_findings``: Discarded findings with discard reason.
-        - ``review_body`` (str): The markdown review body that would be / was submitted.
-        - ``inline_comments``: The exact inline comment payload(s).
-        - ``counts``: ``{inline, summary, discarded}`` counts.
-        - ``submitted`` (bool): True only if ``dry_run=False`` and submission succeeded.
-        - ``github_review_id`` (int | None): GitHub review ID after real submission.
+        A dict with keys:
+        - dry_run (bool), pr_number (int), head_sha (str)
+        - inline_findings, summary_findings, discarded_findings
+        - review_body (str), inline_comments (list)
+        - counts: {inline, summary, discarded}
+        - submitted (bool), github_review_id (int | None)
 
     Raises:
-        ValueError: If *pr_url* is invalid or findings/summary fail schema validation.
-        RuntimeError: If the GitHub API is unreachable or returns an error.
+        ValueError: pr_url invalid, or findings/summary fail schema validation.
+        RuntimeError: GitHub API unreachable or returns an error.
     """
     # -- 1. Parse PR URL --
     try:
@@ -176,24 +167,11 @@ def submit_pr_review(
     except InvalidGitHubPRURL as exc:
         raise ValueError(str(exc)) from exc
 
-    # -- 2. Validate ReviewResult schema (Pydantic) --
-    try:
-        review_summary = ReviewSummary.model_validate(summary)
-    except Exception as exc:
-        raise ValueError(f"Invalid summary schema: {exc}") from exc
-
-    # Assign stable IDs via from_findings.
-    try:
-        from review.models import ReviewFinding
-        parsed_findings = [ReviewFinding.model_validate(f) for f in findings]
-    except Exception as exc:
-        raise ValueError(f"Invalid finding schema: {exc}") from exc
-
-    # Require at least a PR number for ReviewResult – use parsed URL's number.
+    # -- 2. Assign stable IDs (FastMCP already validated Pydantic types) --
     review_result = ReviewResult.from_findings(
         pr_number=parsed.number,
-        findings=parsed_findings,
-        summary=review_summary,
+        findings=findings,
+        summary=summary,
     )
 
     # -- 3. Re-fetch current PR context from GitHub (all GET, read-only) --
