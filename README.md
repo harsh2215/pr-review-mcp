@@ -68,47 +68,13 @@ Once installed, both tools appear automatically in every Claude Desktop conversa
 
 ---
 
-## Quickstart — Manual Config (dev/advanced)
-
-If you prefer to skip the bundle:
-
-### 1. Add to `~/.config/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "pr-review-mcp": {
-      "command": "/home/YOUR_USER/Desktop/Lilly/pr-review-mcp/run_mcp.sh"
-    }
-  }
-}
-```
-
-### 2. Set your GitHub token
-
-Create a `.env` file in the project directory (gitignored):
-
-```bash
-cp .env.example .env
-# edit .env and set GITHUB_TOKEN=ghp_...
-```
-
-### 3. Restart Claude Desktop
-
-Fully quit and reopen Claude Desktop.
-
----
-
 ## GitHub Token
 
-| Method | Where the token goes |
-|--------|----------------------|
-| Bundle install | Entered once in Claude Desktop's install dialog; stored securely by the app |
-| Manual config | `.env` file in the project directory (never committed) |
+Your GitHub token is entered once in Claude Desktop's install dialog during the `.mcpb` bundle installation and stored securely by the app.
 
 **Security invariants:**
 - The token is never logged, included in error messages, or returned in MCP responses.
-- `.env` is gitignored. The `.mcpb` bundle never contains a token.
+- The `.mcpb` bundle never contains a token.
 
 ---
 
@@ -119,7 +85,6 @@ pr-review-mcp/
 ├── server.py              # MCP entry point — registers both tools
 ├── manifest.json          # MCPB bundle manifest (v0.3)
 ├── requirements.txt       # Python dependencies
-├── run_mcp.sh             # Dev launcher (for manual claude_desktop_config.json)
 ├── github/
 │   ├── client.py          # GitHub REST API client
 │   └── __init__.py
