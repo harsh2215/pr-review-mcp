@@ -380,6 +380,7 @@ def submit_pr_review(
 # Entry point
 # ---------------------------------------------------------------------------
 
+app = mcp.http_app(transport="http")
 
 def main(transport: str = "http"):
     parser = argparse.ArgumentParser(description="Run the PR review MCP server")
