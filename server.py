@@ -81,6 +81,7 @@ if client_id and client_secret:
         client_secret=client_secret,
         base_url="https://pr-review-mcp.onrender.com",
         redirect_path="/oauth/github/callback",
+        required_scopes=["repo", "read:user", "user:email"],
     )
 
 mcp = FastMCP("pr-review", auth=auth)
