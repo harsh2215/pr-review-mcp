@@ -381,7 +381,7 @@ def submit_pr_review(
 # ---------------------------------------------------------------------------
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="Run the PR review MCP server")
     parser.add_argument(
         "--transport",
@@ -401,3 +401,7 @@ if __name__ == "__main__":
             host=args.host,
             port=args.port,
         )
+
+
+if __name__ == "__main__":
+    main()
