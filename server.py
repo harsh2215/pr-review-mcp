@@ -381,12 +381,12 @@ def submit_pr_review(
 # ---------------------------------------------------------------------------
 
 
-def main():
+def main(transport: str = "http"):
     parser = argparse.ArgumentParser(description="Run the PR review MCP server")
     parser.add_argument(
         "--transport",
         choices=("stdio", "sse", "http"),
-        default="stdio",
+        default=transport,
         help="MCP transport (default: stdio)",
     )
     parser.add_argument("--host", default="127.0.0.1")
