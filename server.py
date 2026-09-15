@@ -79,7 +79,7 @@ if client_id and client_secret:
     auth = GitHubProvider(
         client_id=client_id,
         client_secret=client_secret,
-        base_url="https://harsh-pr-review-mcp.fastmcp.app",
+        base_url="https://pr-review-mcp.onrender.com",
         redirect_path="/oauth/github/callback",
     )
 
