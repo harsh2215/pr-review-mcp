@@ -16,6 +16,7 @@ import os
 from typing import Any
 
 import httpx
+from fastmcp.server.dependencies import get_access_token
 from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
@@ -62,6 +63,9 @@ def _load_token() -> str:
     Raises:
         GitHubAuthError: If GITHUB_TOKEN is missing or empty.
     """
+    token = get_access_token()
+    if token:
+        return token.token
     load_dotenv()
     token = os.environ.get("GITHUB_TOKEN", "").strip()
     if not token:

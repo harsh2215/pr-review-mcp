@@ -33,15 +33,22 @@ Idempotency note:
 """
 
 from __future__ import annotations
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
+
+import argparse
 from typing import Any
 
 try:
-    # MCP v2.x
-    from mcp.server.mcpserver import MCPServer as FastMCP
+    # FastMCP
+    from fastmcp import FastMCP
 except ImportError:
     # MCP v1.x
     from mcp.server.fastmcp import FastMCP
+
+from fastmcp.server.auth.providers.github import GitHubProvider
 
 from github.client import GitHubAuthError, GitHubClient, GitHubHTTPError
 from repository.normalizer import (
@@ -64,7 +71,19 @@ from utils.github_url import (
 # Server instance
 # ---------------------------------------------------------------------------
 
-mcp = FastMCP("pr-review")
+client_id=os.environ.get("GITHUB_CLIENT_ID")
+client_secret=os.environ.get("GITHUB_CLIENT_SECRET")
+
+auth = None
+if client_id and client_secret:
+    auth = GitHubProvider(
+        client_id=client_id,
+        client_secret=client_secret,
+        base_url="http://127.0.0.1:8000",
+        redirect_path="/oauth/github/callback",
+    )
+
+mcp = FastMCP("pr-review", auth=auth)
 
 # ---------------------------------------------------------------------------
 # Tools
@@ -363,5 +382,22 @@ def submit_pr_review(
 
 
 if __name__ == "__main__":
-    # The default transport is stdio.
-    mcp.run()
+    parser = argparse.ArgumentParser(description="Run the PR review MCP server")
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "sse", "http"),
+        default="stdio",
+        help="MCP transport (default: stdio)",
+    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    args = parser.parse_args()
+
+    if args.transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(
+            transport=args.transport,
+            host=args.host,
+            port=args.port,
+        )
