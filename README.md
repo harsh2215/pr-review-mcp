@@ -1,27 +1,44 @@
 # PR Review MCP
 
-A local MCP server that gives **Claude Desktop** the ability to retrieve GitHub Pull Requests and submit structured code reviews.
+A Model Context Protocol (MCP) server that gives **Claude AI and any other MCP-compatible AI agent** the ability to retrieve GitHub Pull Requests, explore repository structures, and submit structured code reviews.
 
-**Claude does the AI reasoning. The MCP server does the GitHub plumbing.**
+**LLM does the AI reasoning. The MCP server does the GitHub plumbing.**
 
 ---
 
 ## Architecture
 
+The server supports **two deployment modes** that share the exact same four MCP tools:
+
 ```
-Claude Desktop
-      │
-      │  review_pull_request(PR URL)
-      ▼
-MCP Server  ──►  GitHub REST API  ──►  PRContext
-      │
-      │  submit_pr_review(findings, summary, dry_run=True)
-      ▼
-Validate against real diff  ──►  Submit (or dry-run)
+┌─────────────────────────────────────────────────────────────────┐
+│                        LOCAL (HTTP)                             │
+│                                                                 │
+│   Any MCP Client (Claude / IDE / Inspector)                     │
+│         │  stdio/JSON-RPC or HTTP                               │
+│         ▼                                                       │
+│   server.py  ──►  github/client.py  ──►  GitHub REST API        │
+│         │         (PAT via .env)                                │
+│         ▼                                                       │
+│   PRContext / ReviewResult returned                             │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    CLOUD (HTTP + OAuth)                         │
+│                                                                 │
+│   Any MCP Client (IDE / mcp-remote / Inspector)                 │
+│         │  HTTP SSE  ─►  pr-review-mcp.onrender.com/mcp         │
+│         ▼                                                       │
+│   FastMCP (GitHubProvider OAuth)                                │
+│         │  Bearer token (user's GitHub OAuth session)           │
+│         ▼                                                       │
+│   server.py  ──►  github/client.py  ──►  GitHub REST API        │
+│         ▼                                                       │
+│   PRContext / ReviewResult returned to the client               │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-- **Claude** reads the `PRContext` and produces semantic findings (`ReviewResult`).
-- **The MCP server** never calls an LLM. It only fetches, normalises, validates, and (optionally) submits.
+**Key design principle:** Claude never calls an LLM. The server only fetches, normalises, validates and (optionally) submits.
 
 ---
 
@@ -29,94 +46,119 @@ Validate against real diff  ──►  Submit (or dry-run)
 
 | Tool | Description |
 |------|-------------|
-| `review_pull_request` | Fetches and normalises a GitHub PR — diffs, commits, source content. Read-only. |
-| `get_repository_context` | Fetches repository metadata and the Git tree (file/directory paths) for a given branch/commit without fetching file contents. Read-only. |
-| `get_repository_file` | Fetches the text content of a single repository file at a specific branch/commit. Supports text files up to 100KB. Read-only. |
-| `submit_pr_review` | Validates Claude's findings against the real diff and submits a GitHub review. Use `dry_run=True` (default) to preview without mutating GitHub. |
+| `review_pull_request` | Fetches and normalises a GitHub PR — diffs, commits, source content. Read-only. Returns a full engineering rubric for Claude to evaluate against. |
+| `get_repository_context` | Fetches repository metadata and the complete Git tree (file/directory paths) for a given branch/commit. Read-only. |
+| `get_repository_file` | Fetches the text content of a single repository file at a specific branch/commit. Supports text files up to 100 KB. Read-only. |
+| `submit_pr_review` | Validates Claude's findings against the real diff and submits a GitHub review. Defaults to `dry_run=True` — no mutation without explicit opt-in. |
 
 ---
 
-## Quickstart — Install the Bundle (recommended)
+## Installation
 
-The easiest way to connect this server to Claude Desktop is via the `.mcpb` bundle.
+### Option A — Cloud server (Recommended)
 
-### 1. Prerequisites
+The server is deployed at `https://pr-review-mcp.onrender.com`. Connect any MCP client with a single URL — no Python install, no PAT stored in a file.
 
-Python 3.10+ and the required packages:
+**Authentication:** The cloud server uses **GitHub OAuth**. On first connection, your browser opens a GitHub authorisation page. The token is scoped to your own GitHub account and handled entirely by the server.
+
+#### Claude Desktop (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "pr-review": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://pr-review-mcp.onrender.com/mcp"
+      ]
+    }
+  }
+}
+```
+
+> **Note:** `mcp-remote` handles the OAuth handshake and token refresh automatically.
+
+#### Antigravity IDE / VS Code (`~/.gemini/config/mcp_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "pr-review": {
+      "type": "http",
+      "url": "https://pr-review-mcp.onrender.com/mcp"
+    }
+  }
+}
+```
+
+---
+
+### Option B — Run locally over HTTP
+
+Run the server on your own machine and point your MCP client at `localhost`. Useful for development or offline use.
 
 ```bash
+# 1. Install dependencies
 pip install -r requirements.txt
+
+# 2. Set your token
+echo "GITHUB_TOKEN=ghp_your_token" > .env
+
+# 3. Start the server
+python3 server.py --transport http --host 127.0.0.1 --port 8000
 ```
 
-### 2. Build the bundle
+Then configure your MCP client:
 
-```bash
-npm install -g @anthropic-ai/mcpb   # one-time install of the CLI
-mcpb pack                            # creates pr-review-mcp.mcpb
+**Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "pr-review": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://127.0.0.1:8000/mcp"
+      ]
+    }
+  }
+}
 ```
 
-### 3. Install in Claude Desktop
+**Antigravity IDE / VS Code** (`mcp_config.json`):
 
-Double-click `pr-review-mcp.mcpb` **or** open it with Claude Desktop.
+```json
+{
+  "mcpServers": {
+    "pr-review": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
 
-Claude Desktop will show an installation dialog and ask for your **GitHub Token**:
-
-- Create a fine-grained PAT at <https://github.com/settings/tokens?type=beta>
-- Required permissions: **Contents** (read), **Pull requests** (read + write)
-
-Once installed, both tools appear automatically in every Claude Desktop conversation.
+> **Tip:** Comment out `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` in your `.env` to disable OAuth for local connections — the server falls back to the `GITHUB_TOKEN` PAT automatically.
 
 ---
 
-## GitHub Token
+## Usage
 
-Your GitHub token is entered once in Claude Desktop's install dialog during the `.mcpb` bundle installation and stored securely by the app.
-
-**Security invariants:**
-- The token is never logged, included in error messages, or returned in MCP responses.
-- The `.mcpb` bundle never contains a token.
-
----
-
-## Project Structure
-
-```
-pr-review-mcp/
-├── server.py              # MCP entry point — registers both tools
-├── manifest.json          # MCPB bundle manifest (v0.3)
-├── requirements.txt       # Python dependencies
-├── github/
-│   ├── client.py          # GitHub REST API client
-│   └── __init__.py
-├── review/
-│   ├── models.py          # PRContext, ReviewFinding, ReviewResult
-│   ├── normalizer.py      # GitHub API → PRContext
-│   ├── prompts.py         # Review rubric / system prompt for Claude
-│   ├── submission.py      # Diff validation + GitHub review submission
-│   └── __init__.py
-├── utils/
-│   ├── github_url.py      # PR URL parser
-│   └── __init__.py
-└── tests/                 # 200 tests (unit + live integration)
-```
-
----
-
-## Testing a PR
-
-### Step 1 — Ask Claude to retrieve the PR
+### Step 1 — Ask Claude to retrieve a PR
 
 ```
 Review the pull request at https://github.com/OWNER/REPO/pull/N
 ```
 
-Claude will call `review_pull_request` and receive the full `PRContext`.
+Claude calls `review_pull_request` and receives the full `PRContext` plus the embedded engineering rubric.
 
 ### Step 2 — Claude produces findings
 
-Claude analyses the diff and produces a `ReviewResult` with typed `ReviewFinding` objects (severity, category, file, line, recommendation).
+Claude analyses the diff and produces a `ReviewResult` with typed `ReviewFinding` objects (severity, category, file, line, recommendation, confidence).
 
-### Step 3 — Dry-run submission (safe)
+### Step 3 — Dry-run submission (safe preview)
 
 ```
 Submit the review in dry-run mode.
@@ -125,8 +167,8 @@ Submit the review in dry-run mode.
 Claude calls `submit_pr_review(..., dry_run=True)`. The server:
 1. Re-fetches the current diff from GitHub.
 2. Validates every finding's anchor line against the real diff.
-3. Downgrades invalid anchors to `SUMMARY` (never discards valid findings).
-4. Returns a full validation report — **no GitHub mutation**.
+3. Downgrades invalid anchors to `SUMMARY` (never silently discards valid findings).
+4. Returns a full validation report — **zero GitHub mutation**.
 
 ### Step 4 — Live submission (optional)
 
@@ -134,7 +176,49 @@ Claude calls `submit_pr_review(..., dry_run=True)`. The server:
 Submit the review for real.
 ```
 
-Claude calls `submit_pr_review(..., dry_run=False)`. The server posts a single atomic GitHub review.
+Claude calls `submit_pr_review(..., dry_run=False)`. The server posts one atomic GitHub review.
+
+---
+
+## GitHub Token / Auth
+
+| Mode | Auth method | Where token comes from |
+|------|-------------|------------------------|
+| Cloud (Render) | GitHub OAuth | Browser login — no token stored locally |
+| Local HTTP | Fine-grained PAT | `.env` file (gitignored) |
+
+**Security invariants:**
+- The token is never logged, included in error messages, or returned in MCP responses.
+- The `.mcpb` bundle never contains a token.
+- `dry_run=True` is the default — the server never mutates GitHub without an explicit opt-in.
+
+---
+
+## Project Structure
+
+```
+pr-review-mcp/
+├── server.py              # MCP entry point — registers all four tools
+├── manifest.json          # MCPB bundle manifest (v0.3)
+├── requirements.txt       # Python dependencies
+├── github/
+│   ├── client.py          # GitHub REST API client (sync, httpx)
+│   └── __init__.py
+├── review/
+│   ├── models.py          # PRContext, ReviewFinding, ReviewResult (Pydantic)
+│   ├── normalizer.py      # GitHub API → PRContext
+│   ├── prompts.py         # Engineering rubric injected into tool response
+│   ├── submission.py      # Diff validation + GitHub review submission
+│   └── __init__.py
+├── repository/
+│   ├── models.py          # RepositoryContext, RepositoryFile (Pydantic)
+│   ├── normalizer.py      # GitHub API → RepositoryContext / RepositoryFile
+│   └── __init__.py
+├── utils/
+│   ├── github_url.py      # PR and repo URL parser
+│   └── __init__.py
+└── tests/                 # 310 tests (unit + live integration)
+```
 
 ---
 
@@ -144,7 +228,7 @@ Claude calls `submit_pr_review(..., dry_run=False)`. The server posts a single a
 pytest -q
 ```
 
-Unit tests run without a token. Live integration tests (18 tests against PR #2) run only when `GITHUB_TOKEN` is set.
+Unit tests run without a token. Live integration tests run only when `GITHUB_TOKEN` is set in the environment.
 
 ---
 
@@ -154,12 +238,10 @@ Unit tests run without a token. Live integration tests (18 tests against PR #2) 
 mcpb pack
 ```
 
-Output: `pr-review-mcp.mcpb` (≈35KB, 13 files, no credentials).
-
-To verify the manifest is valid before packing:
+Output: `pr-review-mcp.mcpb` — a single portable archive. No credentials included.
 
 ```bash
-mcpb validate   # or: mcpb pack (always validates first)
+mcpb validate   # validates the manifest before packing (also runs automatically on pack)
 ```
 
 ---
