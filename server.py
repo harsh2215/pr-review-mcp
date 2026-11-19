@@ -106,6 +106,9 @@ def review_pull_request(pr_url: str) -> dict:
     The MCP host (Claude) is responsible for the actual code review; this tool
     only fetches and normalizes data.
 
+    The result also includes a ``review_instructions`` field containing the
+    full review rubric. Read it and follow it when reviewing the PR.
+
     Args:
         pr_url: Full GitHub PR URL.
             Example: ``https://github.com/owner/repo/pull/42``
@@ -125,6 +128,7 @@ def review_pull_request(pr_url: str) -> dict:
         - ``total_commits``: int
         - ``files``: list of ``{path, status, additions, deletions, patch, source_content, ...}``
         - ``total_additions``, ``total_deletions``, ``total_changed_files``
+        - ``review_instructions``: the review rubric/guidelines to follow
 
     Raises:
         ValueError: If *pr_url* is not a valid GitHub PR URL.
